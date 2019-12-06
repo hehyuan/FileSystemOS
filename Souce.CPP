@@ -170,7 +170,7 @@ int file_to_buffer(FCB* fcbp,char* Buffer);	//文件内容读到Buffer,返回文件长度
 int ParseCommand(char *);		//将输入的命令行分解成命令和参数等
 void ExecComd(int);				//执行命令
 
-//#define INIT	//决定初始化还是从磁盘读入
+#define INIT	//决定初始化还是从磁盘读入
 
 void main()
 {
@@ -802,9 +802,10 @@ int MdComd(int k)		//md命令处理函数
 		return -1;
 	}
 	i=FindFCB(DirName,s,attrib,p);
-	if (i>0)
+	short j= FindFCB(DirName, s, 0, p);
+	if (i>0 || j>=0)
 	{
-		cout<<"\n错误：目录重名！\n";
+		cout<<"\n错误：目录与现有目录或文件重名！\n";
 		return -1;
 	}
 	if (k==2)		//命令形式：md <目录名> |<属性符>
@@ -2578,6 +2579,7 @@ int ParseCommand(char *p)	//将输入的命令行分解成命令和参数等
 			break;
 		}
 	}
+
 	for (i=0;comd[0][i]!='\0';i++)
 		if	(comd[0][i]=='/')		//处理cd/，dir/usr等情况
 			break;
@@ -2590,6 +2592,22 @@ int ParseCommand(char *p)	//将输入的命令行分解成命令和参数等
 		comd[0][i]='\0';
 		k++;	//多出一个参数
 	}
+
+	for (i = 1; comd[0][i] != '\0'; i++)   //处理cd..指令 （4.2完成）
+		if (comd[0][i] == '.' && comd[0][i-1] == '.')
+			break;
+	if (comd[0][i] != '\0')			
+	{
+		if (k > 0)
+			for (j = k; j > 0; j--)
+				strcpy(comd[j + 1], comd[j]);	//后移
+		strcpy(comd[1], &comd[0][i-1]);
+		comd[0][i-1] = '\0';
+		k++;	//多出一个参数
+	}
+
+	//PS：重定向指令暂未实现！！！！
+
 	return k;
 }
 
