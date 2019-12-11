@@ -1857,6 +1857,7 @@ int ReadComd(int k)		//read命令的处理函数：读文件
 
 int CopyComd(int k)		//copy命令的处理函数：复制文件 
 {		// 通配符: 搞定	Alkane 2019/12/6
+		// 修复不能 copy <filename> .. 和copy <filename> / 的错误 Alkane 2019/12/11
 	// 复制文件：copy <源文件名> [<目标文件名>]
 	// 命令功能：为目标文件建立目录项，分配新的盘块，并将源文件的内容复制到目标文件中
 	// 和其他命令一样，这里的“文件名”，是指最后一个名字是文件的路径名。
@@ -1884,6 +1885,7 @@ int CopyComd(int k)		//copy命令的处理函数：复制文件
 	char gFileName[PATH_LEN];	//存放文件全路径名
 	bool matchAll = false;
 	char ch;
+	bool flag1 = false, flag2 = false;//flag1 := .. 是否为FileName2  flag2 := / 是否为FileName2
 	FCB* fcbp, * fcbp1, * fcbp2;
 	if (k < 1 || k>2)
 	{
@@ -1891,7 +1893,6 @@ int CopyComd(int k)		//copy命令的处理函数：复制文件
 		return -1;
 	}
 	s01 = ProcessPath(comd[1], FileName1, k, 0, '\20');//取FileName所在目录的首块号
-	//TODO
 	if (strcmp(FileName1, "*")==0) {// copy * [~]出现了通配符
 		matchAll = true;
 	}
@@ -1939,13 +1940,31 @@ int CopyComd(int k)		//copy命令的处理函数：复制文件
 			else	//k=2(命令中提供目标文件)的情况
 			{
 				s02 = ProcessPath(comd[2], FileName2, k, 0, '\20');//取FileName2所在目录的首块号
-				if (s02 < 1)			//目标路径错误
+				if (strcmp(comd[2], "/") == 0) {
+					if (strcmp(curpath.cpath, "/") == 0) {//当前处于根目录下
+						cout << "\n当前目录无父目录\n";
+						return -2;
+					}
+					flag2 = true;
+					strcpy(FileName2, FileName1);
+					s02 = 1;
+				}
+				else	if (s02 < 1)			//目标路径错误
 					return s02;
-			}
-			if (!IsName(FileName2))		//若名字不符合规则
-			{
+				flag1 = strcmp(FileName2, "..") == 0;
+			}//TODO 处理 copy <filename> / 的情况
+			if (!IsName(FileName2))	//若名字不符合规则
+			{//这里考虑了出现 copy <filename> .. 的情况
+				if (flag1) {//FileName2 是.. 
+					if (strcmp(curpath.cpath, "/") == 0) {//当前处于根目录下
+						cout << "\n当前目录无父目录\n";
+						return -2;
+					}
+				}
+				else {
 				cout << "\n命令中的目标文件名错误。\n";
 				return -2;
+				}
 			}
 			s2 = FindFCB(FileName2, s02, '\040', fcbp);	//取FileName2(目标文件)的首块号(查其存在性)
 			if (s2 >= 0 && fcbp->Fattrib <= '\07')	//存在同名目标文件
