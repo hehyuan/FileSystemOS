@@ -1060,6 +1060,7 @@ int FindBlankFCB(short s, FCB*& fcbp1)	//寻找首块号为s的目录中的空�
 		s0 = s;		//记下上一个盘块号
 		s = FAT[s];	//取下一个盘块号
 	}
+	cout << 1;
 	if (strcmp(temppath, "/") == 0)	//若是根目录
 	{
 		cout << "\n根目录已满，不能再创建目录项。\n";
@@ -1885,8 +1886,11 @@ int CopyComd(int k)		//copy命令的处理函数：复制文件
 	char gFileName[PATH_LEN];	//存放文件全路径名
 	bool matchAll = false;
 	char ch;
-	bool flag1 = false, flag2 = false;//flag1 := .. 是否为FileName2  flag2 := / 是否为FileName2
+	//flag1 := .. 是否为FileName2  flag2 := / 是否为FileName2
+	bool flag1 = false, flag2 = false;
 	FCB* fcbp, * fcbp1, * fcbp2;
+	//是否覆盖同名文件
+	bool coverSameName = false;
 	if (k < 1 || k>2)
 	{
 		cout << "\n命令中参数太多或太少。\n";
@@ -1952,7 +1956,7 @@ int CopyComd(int k)		//copy命令的处理函数：复制文件
 				else	if (s02 < 1)			//目标路径错误
 					return s02;
 				flag1 = strcmp(FileName2, "..") == 0;
-			}//TODO 处理 copy <filename> / 的情况
+			}
 			if (!IsName(FileName2))	//若名字不符合规则
 			{//这里考虑了出现 copy <filename> .. 的情况
 				if (flag1) {//FileName2 是.. 
@@ -1970,30 +1974,66 @@ int CopyComd(int k)		//copy命令的处理函数：复制文件
 			if (s2 >= 0 && fcbp->Fattrib <= '\07')	//存在同名目标文件
 			{
 				cout << "\n存在文件与目标文件同名。\n";
-				return -3;
+				char ch;
+				cout << "\n是否覆盖同名文件?[Y/N]";
+				cin >> ch;
+				if (!(ch == 'Y' || ch == 'y'))
+					return -3;
+				else {//选择覆盖同名文件
+					s22 = s02; //当作FileName2不存在来处理
+					coverSameName = true;
+				}
 			}
-			if (s2 < 0)		//FileName2尚不存在，在s02为首块号的目录内复制目标文件
-				s22 = s02;
-			else			//FileName2存在，但它是目录名
-			{
-				s22 = s2;
-				if (s2 != s01)		//源文件与目标文件不同目录
+			if (coverSameName == false) { //FileName2不存在
+				if (s2 < 0)		//FileName2尚不存在，在s02为首块号的目录内复制目标文件
+					s22 = s02;
+				else			//FileName2存在，但它是目录名
 				{
-					b = FindFCB(FileName1, s2, attrib, fcbp);//需查FileName2目录中有没有文件FileName1
-					if (b >= 0)
+					s22 = s2;
+					if (s2 != s01)		//源文件与目标文件不同目录
 					{
-						cout << "\n目标目录中有同名文件，不能复制。\n";
-						return -4;
+						b = FindFCB(FileName1, s2, '\040', fcbp);//需查FileName2目录中有没有文件FileName1
+						if (b >= 0&&fcbp->Fattrib<='\07')
+						{
+							cout << "\n目标目录中有同名文件.\n";
+							char ch;
+							cout << "\n是否覆盖同名文件?[Y/N]";
+							cin >> ch;
+							if (!(ch == 'Y' || ch == 'y'))
+								return -4;
+							else {//选择覆盖同名文件
+								coverSameName = true;
+							}
+						}
+						else if(b>=0) {//存在的是同名目录
+							cout << "\n存在同名目录!\n";
+							return -4;
+						}
+						FileName2 = FileName1;	//缺省目标文件名，同名复制
 					}
-					FileName2 = FileName1;	//缺省目标文件名，同名复制
-				}
-				else
-				{
-					cout << "\n不能同目录同名复制。\n";
-					return -5;
+					else
+					{
+						cout << "\n同目录下有同名文件!\n";
+						char ch;
+						cout << "\n是否覆盖同名文件?[Y/N]";
+						cin >> ch;
+						if (!(ch == 'Y' || ch == 'y'))
+							return -5;
+						else {//选择覆盖同名文件
+							coverSameName = true;
+							FileName2 = FileName1;	//缺省目标文件名，同名复制
+						}
+					}
 				}
 			}
-			i = FindBlankFCB(s22, fcbp2);
+			if (coverSameName == false) {//只有当不覆盖同名文件时才寻找新的FCB
+				i = FindBlankFCB(s22, fcbp2);
+			}
+			else {
+				i = 1;
+				coverSameName = false; //恢复标志位
+				fcbp2 = fcbp;
+			}
 			if (i < 0)
 			{
 				cout << "\n复制文件失败。\n";
@@ -2160,9 +2200,9 @@ int AttribComd(int k)	//attrib命令的处理函数：修改文件或目录属�
 	}
 	//////////////////////////////////////////////////////////////////////////
 	FCB* tmp = (FCB*)Disk[s];
-	do {
 		if (matchAll == true)
 			fcbp = tmp;
+	do {
 		for (i = 0; i < 4; i++, fcbp++) {
 			ch = fcbp->FileName[0];	//取文件(目录)名的第一个字符
 			if (ch == (char)0xe5)		//空目录项
@@ -2215,7 +2255,7 @@ int AttribComd(int k)	//attrib命令的处理函数：修改文件或目录属�
 			if (matchAll == false)break;
 		}
 		s = FAT[s];
-	} while (s > 0 && ch != '\0' && matchAll == true);
+	} while (s > 0 && (ch != '\0') && matchAll == true);
 	return 1;	//修改属性完成，返回
 }
 
