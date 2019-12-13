@@ -169,6 +169,7 @@ int buffer_to_file(FCB* fcbp,char* Buffer);	//Buffer写入文件
 int file_to_buffer(FCB* fcbp,char* Buffer);	//文件内容读到Buffer,返回文件长度
 int ParseCommand(char *);		//将输入的命令行分解成命令和参数等
 void ExecComd(int);				//执行命令
+int MoveComd(int);
 
 #define INIT	//决定初始化还是从磁盘读入
 
@@ -400,7 +401,7 @@ void ExecComd(int k)		//执行命令
 	char CmdTab[][COMMAND_LEN]={"create","open","write","read","close",
 		"del","dir","cd","md","rd","ren","copy","type","help","attrib",
 		"uof","closeall","block","rewind","fseek","fat","check","exit",
-		"undel","Prompt","udtab"};
+		"undel","Prompt","udtab","move"};
 	int M=sizeof(CmdTab)/COMMAND_LEN;	//统计命令个数
 	for (cid=0;cid<M;cid++)			//在命令表中检索命令
 		if (_stricmp(CmdTab[cid],comd[0])==0)//命令不区分大小写
@@ -459,6 +460,8 @@ void ExecComd(int k)		//执行命令
 		 case 24:PromptComd();		//prompt命令，提示符中路径名显示与否的切换
 				 break;	
 		 case 25:UdTabComd();		//udtab命令，显示被删除文件表(调试程序用)
+				 break;
+		 case 26:MoveComd(k);       //move命令，文件转移及子目录改名
 				 break;
 		 default:cout<<"\n命令错:"<<comd[0]<<endl;
 	}
@@ -527,6 +530,7 @@ int GetAttrib(char* str,char& attrib)
 
 /////////////////////////////////////////////////////////////////
 
+// 2019-12-13 chen, 更改对齐表示，以显示更整齐
 int DirComd(int k)	//dir命令，显示指定目录的内容（文件名或目录名等）
 {
 	// 命令形式：dir[ <目录名>[ <属性>]]
@@ -621,7 +625,7 @@ int DirComd(int k)	//dir命令，显示指定目录的内容（文件名或目录名等）
 				if (attrib!=cc)		//只显示指定属性的文件
 					continue;
 			}
-			cout<<setiosflags(ios::left)<<setw(20)<<p->FileName;
+			cout<<left<<setw(20)<<p->FileName;
 			if (p->Fattrib>='\20')	//是子目录
 			{
 				cout<<"<DIR>\n";
@@ -630,7 +634,7 @@ int DirComd(int k)	//dir命令，显示指定目录的内容（文件名或目录名等）
 			else
 			{
 				cout<<resetiosflags(ios::left);
-				cout<<setiosflags(ios::right)<<setw(10)<<p->Fsize<<endl;
+				cout<<right<<setw(10)<<p->Fsize<<endl;
 				filecount++;
 				fsizecount+=p->Fsize;
 			}
@@ -638,8 +642,8 @@ int DirComd(int k)	//dir命令，显示指定目录的内容（文件名或目录名等）
 		if (ch=='\0') break;
 		s=FAT[s];		//指向该目录的下一个盘块
 	}
-	cout<<resetiosflags(ios::left)<<endl;
-	cout<<setiosflags(ios::right)<<setw(6)<<filecount<<" file(s)";
+	cout<<left<<endl;
+	cout<<right<<setw(6)<<filecount<<" file(s)";
 	cout<<setw(8)<<fsizecount<<" bytes"<<endl;
 	cout<<setw(6)<<dircount<<" dir(s) "<<setw(8)<<SIZE*FAT[0];
 	cout<<" free"<<endl;
@@ -2612,3 +2616,69 @@ int ParseCommand(char *p)	//将输入的命令行分解成命令和参数等
 }
 
 /////////////////////////////////////////////////////////////////
+
+int MoveComd(int k) {
+	char *PathName1, *PathName2;
+	FCB *p1,*p2;
+	short t, tmp;
+	if (k < 1 || k>2) {
+		cout << "\n参数太多或太少！\n";
+		return -1;
+	}
+	short s1 = ProcessPath(comd[1], PathName1, k, 0, '\040'); //可以是文件或者子目录
+	short s2 = ProcessPath(comd[2], PathName2, k, 0, '\020'); //必须是子目录
+	if (s1 < 0) {
+		cout << "\n不存在该文件或目录" << endl;
+		return s1;
+	}
+		
+	if (s2 < 0) {
+		cout << "\n不存在该目录" << endl;
+		return s2;
+	}
+	short tmp1 = FindFCB(PathName1, s1, 0, p1); //查找文件,第一个目录
+	if (tmp1 >= 0) {                //当第一个参数是文件时，利用删除和copy进行move
+		short tmp2 = FindFCB(PathName2, s2, '\020', p2);
+		tmp2= FindFCB(PathName1, tmp2, 0, p2);
+		if (tmp2 >= 0) {
+			cout << "\n文件已存在，是否覆盖当前文件？(y/n) ";
+			char yn;
+			cin >> yn;
+			if (yn == 'Y' || yn == 'y') {
+				p2->FileName[0] = (char)0xe5; //删除目录项；
+				tmp = tmp2;
+				while (tmp > 0){		//回收磁盘空间
+					t = tmp;
+					tmp = FAT[tmp];
+					FAT[t] = 0;
+					FAT[0]++;
+				}
+			}
+			else {
+				return 0;
+			}
+		}
+		strcpy(comd[0], "copy\0");
+		int i, j;
+		for (i = 0; comd[2][i] != '\0'; i++) {}
+		comd[2][i] = '/';
+		for (j = i+1; PathName1[j] != '\0'; j++) {
+			comd[2][j] = PathName1[j - i - 1];
+		}
+		comd[2][j] = '\0';
+
+		CopyComd(k);
+		p1->FileName[0]= (char)0xe5; //删除目录项
+		tmp = tmp1;
+		while (tmp > 0) {		//回收磁盘空间
+			t = tmp;
+			tmp = FAT[tmp];
+			FAT[t] = 0;
+			FAT[0]++;
+		}
+		cout << "\n文件移动成功" << endl;
+		return 1;
+	}
+
+	return 0;
+}
