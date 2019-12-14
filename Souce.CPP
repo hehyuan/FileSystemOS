@@ -50,6 +50,8 @@
 #include <stdlib.h>		//exit(),atoi()
 #include <string.h>		//strcpy(),_stricmp()
 #include <fstream>	//文件操作用
+#include <string>
+#include <sstream>
 using namespace std;
 
 //定义若干符号常量
@@ -170,8 +172,9 @@ int file_to_buffer(FCB* fcbp,char* Buffer);	//文件内容读到Buffer,返回文件长度
 int ParseCommand(char *);		//将输入的命令行分解成命令和参数等
 void ExecComd(int);				//执行命令
 int MoveComd(int);
+int BatchComd(int);
 
-#define INIT	//决定初始化还是从磁盘读入
+// #define INIT	//决定初始化还是从磁盘读入
 
 void main()
 {
@@ -316,7 +319,7 @@ void main()
 
 	// 读入文件分配表FAT
 	char yn;
-	ifstream ffi("\FAT.txt",ios::_Nocreate);//打开文件FAT.txt
+	ifstream ffi("FAT.txt",ios::_Nocreate);//打开文件FAT.txt
 	if (!ffi)
 	{
 		cout<<"Can't open FAT.txt!\n";
@@ -401,7 +404,7 @@ void ExecComd(int k)		//执行命令
 	char CmdTab[][COMMAND_LEN]={"create","open","write","read","close",
 		"del","dir","cd","md","rd","ren","copy","type","help","attrib",
 		"uof","closeall","block","rewind","fseek","fat","check","exit",
-		"undel","Prompt","udtab","move"};
+		"undel","Prompt","udtab","move","batch"};
 	int M=sizeof(CmdTab)/COMMAND_LEN;	//统计命令个数
 	for (cid=0;cid<M;cid++)			//在命令表中检索命令
 		if (_stricmp(CmdTab[cid],comd[0])==0)//命令不区分大小写
@@ -463,6 +466,8 @@ void ExecComd(int k)		//执行命令
 				 break;
 		 case 26:MoveComd(k);       //move命令，文件转移及子目录改名
 				 break;
+		 case 27:BatchComd(k);
+				 break;
 		 default:cout<<"\n命令错:"<<comd[0]<<endl;
 	}
 }
@@ -496,6 +501,7 @@ void HelpComd()				//help命令，帮助信息(显示各命令格式)
 	cout<<"prompt                                  ——提示符是否显示当前目录(切换)。\n";
 	cout<<"fat                                     ——显示FAT表中空闲盘块数(0的个数)。\n";
 	cout<<"check                                   ——核对后显示FAT表中空闲盘块数。\n";
+	cout<<"move <文件名> <目录名>                  ——文件搬家及子目录改名\n";
  }
 
 /////////////////////////////////////////////////////////////////
@@ -2714,4 +2720,121 @@ int MoveComd(int k) {
 	return 1;
 }
 
-///////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+int BatchComd(int k) {
+	char *FileName;
+	FCB *p;
+	if (k < 1 || k> 2) {
+		cout << "\n参数过多或过少\n";
+		return -1;
+	}
+	if (k == 1) {
+		char *cmd;
+		char filename[INPUT_LEN] = "";
+		strcpy(filename, comd[1]);
+		ifstream ff;
+		ff.open(filename);
+		if (!ff) {
+			cout << "\n无法打开文件\n";
+			return -1;
+		}
+		string str;
+		while (getline(ff,str)){
+			cout << "C:>" << str << endl;
+			cmd = (char *)str.c_str();
+			short n = ParseCommand(cmd);
+			ExecComd(n);
+			cout << endl;
+		}
+		ff.close();
+		return 1;
+	}
+	else {
+		if (strcmp("s", comd[2]) != 0) {
+			cout << "\n属性错误\n";
+			return -1;
+		}
+		short s = ProcessPath(comd[1], FileName, k, 0, '\0');
+		short tmp = FindFCB(FileName, s, 0, p);
+		if (tmp < 0) {
+			cout << "\n找不到文件\n";
+			return -1;
+		}
+		//-------读文件
+		short i, j, ii, i_uof, pos, offset;
+		short b, b0, bnum, count = 0, readc;
+		char attrib = '\0';
+		char Buffer[SIZE + 1];
+		strcat(temppath, FileName);
+		i_uof = Check_UOF(temppath);			//查UOF
+		if (i_uof == S)
+		{
+			cout << "\n文件" << temppath << "未打开或不存在，不能读文件。\n";
+			return -2;
+		}
+		if (uof[i_uof].readp == 0)
+		{
+			cout << "\n文件" << temppath << "是空文件。\n";
+			return 1;
+		}
+		pos = uof[i_uof].readp;//从读指针所指位置开始读
+		if (pos > uof[i_uof].fsize)
+		{
+			cout << "\n读指针已指向文件尾部，无可读信息。\n";
+			return 1;
+		}
+		readc = uof[i_uof].fsize - pos + 1;	//读到文件尾部共需读readc个字节
+		
+		
+		bnum = (pos - 1) / SIZE;		//从文件的第bnum块读(bnum从0开始编号)
+		offset = (pos - 1) % SIZE;	//在第bnum块的偏移位置offset处开始读(offset从0开始)
+		b = uof[i_uof].faddr;		//取文件首块号
+		for (i = 0; i < bnum; i++)	//寻找读入的第一个盘块号
+		{
+			b0 = b;
+			b = FAT[b];
+		}
+		ii = offset;
+		while (count < readc)		//读文件至Buffer并显示之
+		{
+			for (i = ii, j = 0; i < SIZE; i++, j++)
+			{
+				Buffer[j] = Disk[b][i];
+				count++;
+				if (count == readc)
+				{
+					j++;
+					break;
+				}
+			}
+			Buffer[j] = '\0';
+			//cout << Buffer;
+			
+			char cmd[INPUT_LEN];
+			short index = 0;
+			for (int k = 0; k < j; k++) {
+				cmd[index++] = Buffer[k];
+				if (Buffer[k] == '\n') {
+					cmd[index-1] = '\0';
+					index = 0;
+					cout << cmd << endl;
+					short n = ParseCommand(cmd);
+					ExecComd(n);
+					cout << endl;
+				}
+			}
+			cmd[index] = '\0';
+			cout << cmd << endl;
+			short n = ParseCommand(cmd);
+			ExecComd(n);
+			cout << endl;
+					
+			ii = 0;
+			b = FAT[b];		//准备读下一个盘块
+		}
+	}
+	return 1;
+}
+
+/////////////////////////////////////////////////////////////////

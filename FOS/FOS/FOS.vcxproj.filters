@@ -26,6 +26,9 @@
     <Text Include="..\..\FAT.txt">
       <Filter>源文件</Filter>
     </Text>
+    <Text Include="test.txt">
+      <Filter>源文件</Filter>
+    </Text>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\Souce.CPP">

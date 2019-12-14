@@ -120,6 +120,7 @@
   </ItemGroup>
   <ItemGroup>
     <Text Include="..\..\FAT.txt" />
+    <Text Include="test.txt" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\Souce.CPP" />
