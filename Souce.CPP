@@ -316,7 +316,7 @@ void main()
 
 	// 读入文件分配表FAT
 	char yn;
-	ifstream ffi("FAT.txt",ios::_Nocreate);//打开文件FAT.txt
+	ifstream ffi("\FAT.txt",ios::_Nocreate);//打开文件FAT.txt
 	if (!ffi)
 	{
 		cout<<"Can't open FAT.txt!\n";
@@ -2628,25 +2628,28 @@ int MoveComd(int k) {
 	short s1 = ProcessPath(comd[1], PathName1, k, 0, '\040'); //可以是文件或者子目录
 	short s2 = ProcessPath(comd[2], PathName2, k, 0, '\020'); //必须是子目录
 	if (s1 < 0) {
-		cout << "\n不存在该文件或目录" << endl;
 		return s1;
 	}
 		
 	if (s2 < 0) {
-		cout << "\n不存在该目录" << endl;
 		return s2;
 	}
 	short tmp1 = FindFCB(PathName1, s1, 0, p1); //查找文件,第一个目录
+	short tmp2 = FindFCB(PathName2, s2, '\020', p2);
+	short tmp3;
 	if (tmp1 >= 0) {                //当第一个参数是文件时，利用删除和copy进行move
-		short tmp2 = FindFCB(PathName2, s2, '\020', p2);
-		tmp2= FindFCB(PathName1, tmp2, 0, p2);
-		if (tmp2 >= 0) {
+		if (tmp2 < 0) {
+			cout << "\n目标目录不存在\n";
+			return -1;
+		}
+		tmp3= FindFCB(PathName1, tmp2, 0, p2);
+		if (tmp3 >= 0) {
 			cout << "\n文件已存在，是否覆盖当前文件？(y/n) ";
 			char yn;
 			cin >> yn;
 			if (yn == 'Y' || yn == 'y') {
 				p2->FileName[0] = (char)0xe5; //删除目录项；
-				tmp = tmp2;
+				tmp = tmp3;
 				while (tmp > 0){		//回收磁盘空间
 					t = tmp;
 					tmp = FAT[tmp];
@@ -2658,16 +2661,27 @@ int MoveComd(int k) {
 				return 0;
 			}
 		}
-		strcpy(comd[0], "copy\0");
-		int i, j;
-		for (i = 0; comd[2][i] != '\0'; i++) {}
-		comd[2][i] = '/';
-		for (j = i+1; PathName1[j] != '\0'; j++) {
-			comd[2][j] = PathName1[j - i - 1];
+		else {
+			strcpy(temppath, comd[2]);
+			tmp3 = FindBlankFCB(tmp2, p2);
 		}
-		comd[2][j] = '\0';
 
-		CopyComd(k);
+		*p2 = *p1;						//源文件的目录项复制给目标文件
+		strcpy(p2->FileName, PathName1);	//写目标文件名
+		short b0 = 0,b;
+		while (tmp1 > 0)		//开始复制文件内容
+		{
+			b = getblock();
+			if (b0 == 0)
+				p2->Addr = b;		//目标文件的首块号
+			else
+				FAT[b0] = b;
+			memcpy(Disk[b], Disk[tmp1], SIZE);	//复制盘块
+			tmp1 = FAT[tmp1];				//准备复制下一个盘块
+			b0 = b;
+		}
+
+
 		p1->FileName[0]= (char)0xe5; //删除目录项
 		tmp = tmp1;
 		while (tmp > 0) {		//回收磁盘空间
@@ -2676,9 +2690,28 @@ int MoveComd(int k) {
 			FAT[t] = 0;
 			FAT[0]++;
 		}
-		cout << "\n文件移动成功" << endl;
+		cout <<comd[1]<<" >> "<<comd[2]<<PathName1<<" [OK]" << endl;
 		return 1;
 	}
+	
+	tmp1 = FindFCB(PathName1, s1, '\020', p1);
+	tmp2 = FindFCB(PathName2, s2, '\040', p2);
+	if (tmp1 < 0) {
+		cout << "\n源目录不存在\n";
+		return -1;
+	}
 
-	return 0;
+	if (tmp2 < 0) {
+		strcpy(p1->FileName, PathName2);
+	}
+	else {
+		strcpy(temppath, comd[2]);
+		tmp3 = FindBlankFCB(tmp2, p2);
+		*p2 = *p1;
+		p1->FileName[0] = (char)0xe5;
+	}
+	cout << comd[1] << " >> " << comd[2] << " [OK]" << endl;
+	return 1;
 }
+
+///////////////////////////////////////////////////////////
