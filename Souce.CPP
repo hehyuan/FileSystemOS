@@ -502,6 +502,7 @@ void HelpComd()				//help命令，帮助信息(显示各命令格式)
 	cout<<"fat                                     ——显示FAT表中空闲盘块数(0的个数)。\n";
 	cout<<"check                                   ——核对后显示FAT表中空闲盘块数。\n";
 	cout<<"move <文件名> <目录名>                  ——文件搬家及子目录改名\n";
+	cout<<"batch batchfile [s]                     ——批处理命令\n";
  }
 
 /////////////////////////////////////////////////////////////////
@@ -915,57 +916,183 @@ int RdComd(int k)
 
 int TypeComd(int k)		//type命令处理函数(显示文件内容)
 {
-	// 显示文件内容：type <文件名>，显示指定文件的内容。
+	// 显示文件内容：type [<文件名>]，显示指定文件的内容。
 	// 若指定文件不存在，则给出错误信息。
+	//显示指定文件的内容。若命令中未指定文件，则显示“当前操作文件”的内容。
+	//所谓“当前操作文件”，是指上一次使用create、open、write、read、rewind或fseek等命令操作过的文件。
 
-	short i,s,size,jj=0;
-	char attrib='\0',*FileName;
-	char *Buffer;
+	short i, s, size, jj = 0, i_uof;
+	char attrib = '\0', *FileName;
+	char* Buffer;
 	char gFileName[PATH_LEN];	//存放文件全路径名
 	FCB* fcbp;
 
-	if(k<1)
+	if (k < 1)
 	{
-		cout<<"\n命令中无文件名。\n";
-		return -1;
-	}
-	s=ProcessPath(comd[1],FileName,k,0,'\020');//取FileName所在目录的首块号
-	if (s<1)			//路径错误
-		return s;		//失败，返回
-	s=FindFCB(FileName,s,attrib,fcbp);		//取FileName的首块号(查其存在性)
-	strcpy(gFileName,temppath);
-	i=strlen(temppath);
-	if (temppath[i-1]!='/')
-		strcat(gFileName,"/");
-	strcat(gFileName,FileName);	//构造文件的全路径名
-	if (s<0)
-	{
-		cout<<"\n文件"<<gFileName<<"不存在。\n";
-		return -3;
-	}
-	if (s==0)
-		cout<<"\n文件"<<gFileName<<"是空文件\n";
-	else
-	{
-		size=fcbp->Fsize;
-		Buffer=new char[size+1];		//分配动态内存空间
-		while (s>0)
-		{
-			for (i=0;i<SIZE;i++,jj++)
-			{
-				if (jj==size)
-					break;
-				Buffer[jj]=Disk[s][i];
-			}
-			if (i<SIZE)
+		//cout << "\n命令中无文件名。\n";
+		//return -1;
+		for (i_uof = S - 1; i_uof >= 0; i_uof--) {
+			if (uof[i_uof].state != 0) {
 				break;
-			s=FAT[s];
+			}
 		}
-		Buffer[jj]='\0';
-		cout<<Buffer<<endl;
-		delete [] Buffer;		//释放分配的动态内存空间
+		if (i_uof < 0) {
+			cout << "\n无当前操作文件可显示。" << endl;
+		}
+		else {
+			s = uof[i_uof].faddr;
+			fcbp = uof[i_uof].fp;
+			size = fcbp->Fsize;
+			Buffer = new char[size + 1];		//分配动态内存空间
+			while (s > 0)
+			{
+				for (i = 0; i < SIZE; i++, jj++)
+				{
+					if (jj == size)
+						break;
+					Buffer[jj] = Disk[s][i];
+				}
+				if (i < SIZE)
+					break;
+				s = FAT[s];
+			}
+			Buffer[jj] = '\0';
+			cout << Buffer << endl;
+			delete[] Buffer;		//释放分配的动态内存空间
+		}
+
 	}
-	return 1;
+	else {
+		s = ProcessPath(comd[1], FileName, k, 0, '\020');//取FileName所在目录的首块号
+		if (s < 1)			//路径错误
+			return s;		//失败，返回
+		s = FindFCB(FileName, s, attrib, fcbp);		//取FileName的首块号(查其存在性)
+		strcpy(gFileName, temppath);
+		i = strlen(temppath);
+		if (temppath[i - 1] != '/')
+			strcat(gFileName, "/");
+		strcat(gFileName, FileName);	//构造文件的全路径名
+		if (s < 0)
+		{
+			cout << "\n文件" << gFileName << "不存在。\n";
+			return -3;
+		}
+		if (s == 0)
+			cout << "\n文件" << gFileName << "是空文件\n";
+		else
+		{
+			size = fcbp->Fsize;
+			Buffer = new char[size + 1];		//分配动态内存空间
+			while (s > 0)
+			{
+				for (i = 0; i < SIZE; i++, jj++)
+				{
+					if (jj == size)
+						break;
+					Buffer[jj] = Disk[s][i];
+				}
+				if (i < SIZE)
+					break;
+				s = FAT[s];
+			}
+			Buffer[jj] = '\0';
+			//cout << Buffer << endl;
+			
+		}
+
+		if (k == 1) {
+			cout << Buffer << endl;
+		}
+		else if (k == 3) {
+			
+			FCB *p2;
+			short pos,len0,len1,ii,len,bn0,bn1;
+			//------------------------------------
+			FindPath(comd[3], 0, 0, p2);	//构成全路径且去掉“..”存于temppath中
+			short ii_uof = Check_UOF(temppath);			//查UOF
+			if (ii_uof == S)
+			{
+				cout << "\n文件" << temppath << "未打开或不存在，不能写文件。\n";
+				return -2;
+			}
+			if (uof[ii_uof].attr&'\01' && uof[ii_uof].state != 1)
+			{	//只读文件不是创建状态不能写
+				cout << "\n" << temppath << "是只读文件，不能写。\n";
+				return -3;
+			}
+			//-------------------------------------------------------
+			
+			p2 = uof[ii_uof].fp;
+
+			//-------------------------------------
+			if (strcmp(comd[2], ">") == 0) {
+				ii = buffer_to_file(p2, Buffer);
+				if (ii == 0)	//写文件失败
+					return ii;
+				uof[ii_uof].fsize = uof[ii_uof].fp->Fsize;
+				uof[ii_uof].faddr = uof[ii_uof].fp->Addr;
+				uof[ii_uof].readp = 1;
+				uof[ii_uof].writep = uof[ii_uof].fsize + 1;
+				return 1;
+			}
+			else if (strcmp(comd[2], ">>") == 0) {
+				pos = uof[ii_uof].fsize + 1;
+			}
+			else {
+				cout << "\n重定向符号错误！" << endl;
+				return -1;
+			}
+			//---------------------------------------
+			if (pos <= 0)
+			{
+				cout << "\n写入位置错误。\n";
+				return -1;
+			}
+			pos--;							//使pos从0开始
+
+			len1 = strlen(Buffer);
+			if (len1 == 0)			//输入长度为0,不改变文件
+				return 0;
+			
+			len0 = uof[ii_uof].fsize;				//取文件原来的长度值
+			
+		
+			//以下处理文件非空的情况
+			len = len1 + pos ;		//计算写入完成后文件的长度
+			bn0 = len0 / SIZE + (short)(len0%SIZE > 0);	//文件原来占用的盘块数
+			bn1 = len / SIZE + (short)(len%SIZE > 0);		//写入后文件将占用的盘块数
+			if (FAT[0] < bn1 - bn0)
+			{
+				cout << "\n磁盘空间不足,不能写入文件.\n";
+				return -1;
+			}
+			char *buf = new char[len + 1];
+			if (buf == 0)
+			{
+				cout << "\n分配内存失败。\n";
+				return -1;
+			}
+			file_to_buffer(p2, buf);		//文件读到buf
+			
+			strcpy(&buf[pos], Buffer);
+			buffer_to_file(p2, buf);
+			delete[] buf;
+			uof[ii_uof].fsize = uof[ii_uof].fp->Fsize;
+			uof[ii_uof].writep = uof[ii_uof].fsize + 1;
+
+
+			cout << "\n输出重定向 >>" << uof[ii_uof].fname << " [OK].\n";
+			delete[] Buffer;		//释放分配的动态内存空间
+		}
+		else {
+			cout << "\n参数过多或者过少！" << endl;
+			return -1;
+		}
+
+		return 1;
+	}
+
+	return -1;
 }
 
 /////////////////////////////////////////////////////////////////
@@ -2573,10 +2700,26 @@ int ParseCommand(char *p)	//将输入的命令行分解成命令和参数等
 		comd[i][0]='\0';
 	for (k=0;k<CK;k++)
 	{	//分解命令及其参数，comd[0]中是命令，comd[1],comd[2]...是参数
-		for (i=0;*p!='\0';i++,p++)
-			if (*p!=' ')				//空格是命令、参数之间的分隔符
-				comd[k][i]=*p;		//取命令标识符
-			else
+		for (i = 0; *p != '\0'; i++, p++)
+			if (*p != ' '&&*p != '>')				//空格是命令、参数之间的分隔符
+				comd[k][i] = *p;		//取命令标识符
+			else if(*p=='>'){
+				if (strlen(comd[k]) != 0) {
+					comd[k][i] = '\0';
+					k++;
+					
+				}
+				comd[k][0] = '>';
+				comd[k][1] = '\0';
+				p++;
+				if (*p == '>') {
+					comd[k][1] = '>';
+					comd[k][2] = '\0';
+					p++;
+				}
+				
+				break;
+			}else
 			{
 				comd[k][i]='\0';
 				if (strlen(comd[k])==0) k--;
@@ -2616,7 +2759,15 @@ int ParseCommand(char *p)	//将输入的命令行分解成命令和参数等
 		k++;	//多出一个参数
 	}
 
-	//PS：重定向指令暂未实现！！！！
+	
+
+	
+	//----调试用-----
+	//for (i = 0; i <= k; i++) {
+	//	cout << comd[i] << " ";
+	//}
+	//cout << endl;
+	//---------------
 
 	return k;
 }
