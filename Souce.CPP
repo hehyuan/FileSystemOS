@@ -564,16 +564,25 @@ int DirComd(int k)	//dir命令，显示指定目录的内容（文件名或目录名等）
 	// 另外还可以考虑含通配符的问题。
 
 	short i,s;
+	short k_tmp,flag=0;
 	short filecount,dircount,fsizecount;	//文件数、目录数、文件长度累计
 	char ch,attrib='\0',attr,cc;
 	FCB *fcbp,*p;
-	
+	char *Buffer;
+	string tmp_buffer="";
+
 	filecount=dircount=fsizecount=0;
-	if (k>1)	//命令中多于1个参数，错误(较复杂的处理应当允许有多个参数)
-	{
-		cout<<"\n命令错误：参数太多。\n";
-		return -1;
+	if (k>1 && strcmp(comd[k - 1], ">") == 0) {
+		flag = 1;
+		k_tmp = k;
+		k -= 2;
 	}
+	if (k > 1 && strcmp(comd[k - 1], ">>") == 0) {
+		flag = 2;
+		k_tmp = k;
+		k -= 2;
+	}
+
 	if (k<1)	//命令无参数，显示当前目录
 	{
 		strcpy(temppath,curpath.cpath);
@@ -609,7 +618,14 @@ int DirComd(int k)	//dir命令，显示指定目录的内容（文件名或目录名等）
 		i=GetAttrib(comd[2],attrib);
 		if (i<0) return i;
 	}
-	cout<<"\nThe Directory of C:"<<temppath<<endl<<endl;
+
+	if (flag == 0)
+		cout << "\nThe Directory of C:" << temppath << endl << endl;
+	else {
+		tmp_buffer += "\nThe Directory of C:";
+		tmp_buffer += temppath;
+		tmp_buffer += "\n\n";
+	}
 	while (s>0)
 	{
 		p=(FCB*) Disk[s];	//p指向该目录的第一个盘块
@@ -632,16 +648,32 @@ int DirComd(int k)	//dir命令，显示指定目录的内容（文件名或目录名等）
 				if (attrib!=cc)		//只显示指定属性的文件
 					continue;
 			}
-			cout<<left<<setw(20)<<p->FileName;
+
+			if (flag == 0)
+				cout << left << setw(20) << p->FileName;
+			else {
+				tmp_buffer += p->FileName;
+				tmp_buffer += "\t";
+			}
+
 			if (p->Fattrib>='\20')	//是子目录
 			{
-				cout<<"<DIR>\n";
+				if (flag == 0)
+					cout << "<DIR>\n";
+				else {
+					tmp_buffer += "<DIR>\n";
+				}
 				dircount++;
 			}
 			else
 			{
 				cout<<resetiosflags(ios::left);
-				cout<<right<<setw(10)<<p->Fsize<<endl;
+				if (flag == 0)
+					cout << right << setw(10) << p->Fsize << endl;
+				else {
+					tmp_buffer += to_string(p->Fsize);
+					tmp_buffer += "\n";
+				}
 				filecount++;
 				fsizecount+=p->Fsize;
 			}
@@ -649,11 +681,96 @@ int DirComd(int k)	//dir命令，显示指定目录的内容（文件名或目录名等）
 		if (ch=='\0') break;
 		s=FAT[s];		//指向该目录的下一个盘块
 	}
-	cout<<left<<endl;
-	cout<<right<<setw(6)<<filecount<<" file(s)";
-	cout<<setw(8)<<fsizecount<<" bytes"<<endl;
-	cout<<setw(6)<<dircount<<" dir(s) "<<setw(8)<<SIZE*FAT[0];
-	cout<<" free"<<endl;
+	if (flag == 0) {
+		cout << left << endl;
+		cout << right << setw(6) << filecount << " file(s)";
+		cout << setw(8) << fsizecount << " bytes" << endl;
+		cout << setw(6) << dircount << " dir(s) " << setw(8) << SIZE * FAT[0];
+		cout << " free" << endl;
+	}
+	else {
+		tmp_buffer += "\n\t" + to_string(filecount);
+		tmp_buffer += " file(s)\t";
+		tmp_buffer += to_string(fsizecount) + " bytes\n\t";
+		tmp_buffer += to_string(dircount) + " dir(s)\t" + to_string(SIZE * FAT[0]) + " free\n";
+	}
+
+	if (flag != 0) {
+		Buffer = (char*)tmp_buffer.c_str();
+
+		//----------
+		FCB *p2;
+		short pos, len0, len1, ii, len, bn0, bn1;
+		FindPath(comd[k_tmp], 0, 0, p2);	//构成全路径且去掉“..”存于temppath中
+		short ii_uof = Check_UOF(temppath);			//查UOF
+		if (ii_uof == S)
+		{
+			cout << "\n文件" << temppath << "未打开或不存在，不能写文件。\n";
+			return -2;
+		}
+		if (uof[ii_uof].attr&'\01' && uof[ii_uof].state != 1)
+		{	//只读文件不是创建状态不能写
+			cout << "\n" << temppath << "是只读文件，不能写。\n";
+			return -3;
+		}
+		
+		p2 = uof[ii_uof].fp;
+		if (flag==1) {
+			ii = buffer_to_file(p2, Buffer);
+			if (ii == 0)	//写文件失败
+				return ii;
+			uof[ii_uof].fsize = uof[ii_uof].fp->Fsize;
+			uof[ii_uof].faddr = uof[ii_uof].fp->Addr;
+			uof[ii_uof].readp = 1;
+			uof[ii_uof].writep = uof[ii_uof].fsize + 1;
+			cout << "\n输出重定向 >" << uof[ii_uof].fname << " [OK].\n";
+			
+			return 1;
+		}
+		else {
+			pos = uof[ii_uof].fsize + 1;
+		}
+		
+		if (pos <= 0)
+		{
+			cout << "\n写入位置错误。\n";
+			return -1;
+		}
+		pos--;							//使pos从0开始
+
+		len1 = strlen(Buffer);
+		if (len1 == 0)			//输入长度为0,不改变文件
+			return 0;
+
+		len0 = uof[ii_uof].fsize;				//取文件原来的长度值
+
+		//以下处理文件非空的情况
+		len = len1 + pos;		//计算写入完成后文件的长度
+		bn0 = len0 / SIZE + (short)(len0%SIZE > 0);	//文件原来占用的盘块数
+		bn1 = len / SIZE + (short)(len%SIZE > 0);		//写入后文件将占用的盘块数
+		if (FAT[0] < bn1 - bn0)
+		{
+			cout << "\n磁盘空间不足,不能写入文件.\n";
+			return -1;
+		}
+		char *buf = new char[len + 1];
+		if (buf == 0)
+		{
+			cout << "\n分配内存失败。\n";
+			return -1;
+		}
+		file_to_buffer(p2, buf);		//文件读到buf
+
+		strcpy(&buf[pos], Buffer);
+		buffer_to_file(p2, buf);
+		delete[] buf;
+		uof[ii_uof].fsize = uof[ii_uof].fp->Fsize;
+		uof[ii_uof].writep = uof[ii_uof].fsize + 1;
+
+
+		cout << "\n输出重定向 >>" << uof[ii_uof].fname << " [OK].\n";
+	}
+
 	return 1;
 }
 
@@ -1033,6 +1150,8 @@ int TypeComd(int k)		//type命令处理函数(显示文件内容)
 				uof[ii_uof].faddr = uof[ii_uof].fp->Addr;
 				uof[ii_uof].readp = 1;
 				uof[ii_uof].writep = uof[ii_uof].fsize + 1;
+				cout << "\n输出重定向 >" << uof[ii_uof].fname << " [OK].\n";
+				//delete[] Buffer;		//释放分配的动态内存空间
 				return 1;
 			}
 			else if (strcmp(comd[2], ">>") == 0) {
@@ -1082,7 +1201,7 @@ int TypeComd(int k)		//type命令处理函数(显示文件内容)
 
 
 			cout << "\n输出重定向 >>" << uof[ii_uof].fname << " [OK].\n";
-			delete[] Buffer;		//释放分配的动态内存空间
+			//delete[] Buffer;		//释放分配的动态内存空间
 		}
 		else {
 			cout << "\n参数过多或者过少！" << endl;
