@@ -52,6 +52,7 @@
 #include <fstream>	//文件操作用
 #include <string>
 #include <sstream>
+#include <algorithm>
 using namespace std;
 
 //定义若干符号常量
@@ -173,7 +174,8 @@ int ParseCommand(char *);		//将输入的命令行分解成命令和参数等
 void ExecComd(int);				//执行命令
 int MoveComd(int);
 int BatchComd(int);
-
+int FcComd(int);				//fc命令处理函数
+int ReplaceComd(int);			//replace命令，实现文件取代
 // #define INIT	//决定初始化还是从磁盘读入
 
 void main()
@@ -404,7 +406,7 @@ void ExecComd(int k)		//执行命令
 	char CmdTab[][COMMAND_LEN]={"create","open","write","read","close",
 		"del","dir","cd","md","rd","ren","copy","type","help","attrib",
 		"uof","closeall","block","rewind","fseek","fat","check","exit",
-		"undel","Prompt","udtab","move","batch"};
+		"undel","Prompt","udtab","move","batch","fc","replace" };
 	int M=sizeof(CmdTab)/COMMAND_LEN;	//统计命令个数
 	for (cid=0;cid<M;cid++)			//在命令表中检索命令
 		if (_stricmp(CmdTab[cid],comd[0])==0)//命令不区分大小写
@@ -468,6 +470,10 @@ void ExecComd(int k)		//执行命令
 				 break;
 		 case 27:BatchComd(k);
 				 break;
+		 case 28:FcComd(k);			//新增fc命令，实现两个文件的比较
+			 break;
+		 case 29:ReplaceComd(k);			//新增fc命令，实现两个文件的比较
+			 break;
 		 default:cout<<"\n命令错:"<<comd[0]<<endl;
 	}
 }
@@ -503,6 +509,8 @@ void HelpComd()				//help命令，帮助信息(显示各命令格式)
 	cout<<"check                                   ——核对后显示FAT表中空闲盘块数。\n";
 	cout<<"move <文件名> <目录名>                  ——文件搬家及子目录改名\n";
 	cout<<"batch batchfile [s]                     ——批处理命令\n";
+	cout << "fc <文件名1> <文件名2>                  ——比较指定的两个文件是否相同。\n";
+	cout << "replace <文件名> <目录名>               ——以“文件名”指定的文件，取代“目录名”指定目录中的同名文件。\n";
  }
 
 /////////////////////////////////////////////////////////////////
@@ -1218,34 +1226,69 @@ int TypeComd(int k)		//type命令处理函数(显示文件内容)
 
 int blockf(int k)	//block命令处理函数(显示文件或目录占用的盘块号)
 {
-	short s;
-	char attrib='\040';		//32表示任意(文件或子目录)目录项都可以
+	// 命令形式：block [<文件名>]
+	// block <文件名> 显示文件或目录占用的盘块号
+	// block 显示当前操作文件占用的盘块号
+
+	short s, i_uof;
+	char attrib = '\040';		//32表示任意(文件或子目录)目录项都可以
 	FCB* fcbp;
 
-	if(k!=1)
-	{
-		cout<<"\n命令中参数个数错误。\n";
+	if (k < 1) {
+		//在UOF表中寻找最后打开的文件
+		for (i_uof = S - 1; i_uof >= 0; i_uof--) {
+			if (uof[i_uof].state != 0) {
+				break;
+			}
+		}
+		if (i_uof < 0) {
+			cout << "无当前操作文件可操作。" << endl;
+			return -2;
+		}
+		else {
+			if (uof[i_uof].fsize == 0) {
+				cout << "文件是空文件，无块号可显示。" << endl;
+				return -2;
+			}
+			else {
+				cout << "\n" << uof[i_uof].fname << "占用的盘块号为：";
+				cout << uof[i_uof].faddr << "  ";
+				cout << endl;
+				return 1;
+			}
+		}
+	}
+	else if (k == 1) {
+		s = FindPath(comd[1], attrib, 1, fcbp);	//找指定目录(的首块号)
+		if (s < 0)
+		{
+			cout << "\n路径名错误！" << endl;
+			return -2;
+		}
+		if (s == 0)
+		{
+			cout << '\n' << temppath << "是空文件\n";
+			return 0;
+		}
+		cout << "\n" << temppath << "占用的盘块号为：";
+		/*
+		老师给的参考程序是存在问题的，这里仅仅要求显示文件或目录占用的盘块号即可，不用循环往下找了
+		while (s > 0)
+		{
+			cout << s << "  ";
+			s = FAT[s];
+		}*/
+		cout << s << "  ";
+		cout << endl;
+		return 1;
+	}
+	else {
+		cout << "\n命令中参数太多。\n";
 		return -1;
 	}
-	s=FindPath(comd[1],attrib,1,fcbp);	//找指定目录(的首块号)
-	if (s<0)
-	{
-		cout<<"\n路径名错误！"<<endl;
-		return -2;
-	}
-	if (s==0)
-	{
-		cout<<'\n'<<temppath<<"是空文件\n";
-		return 0;
-	}
-	cout<<"\n"<<temppath<<"占用的盘块号为：";
-	while (s>0)
-	{
-		cout<<s<<"  ";
-		s=FAT[s];
-	}
-	cout<<endl;
-	return 1;
+
+
+
 }
 
 /////////////////////////////////////////////////////////////////
@@ -1470,7 +1513,10 @@ int getblock()	//获得一个空闲盘块，供fappend()函数调用
 
 int WriteComd(int k)		//write命令的处理函数
 {
-	// 写文件：write <文件名> [<位置>[ insert]]，命令中若无"位置"参数，则在写指
+	//写指令的两个关键信息就是：a、找到当前文件		b、pos 、writec 、ins
+
+
+	// 写文件：write [<文件名>] [<位置>][insert/del]，命令中若无"位置"参数，则在写指
 	// 针所指位置写入文件内容；若提供"位置"参数，则在对应位置写入内容。位置可以
 	// 是整数n，是指在文件的第n个字节处开始写入(位置从1开始编号)。"位置" 还可以
 	// 是 "append"（前3个字符有效，不区分大小写），表示在文件尾部写入信息；若有
@@ -1479,163 +1525,597 @@ int WriteComd(int k)		//write命令的处理函数
 	// 的内容(对应位置的内容)。写入完毕调整文件长度和写指针值。
 	// 若文件未打开或文件不存在，分别给出错误信息。
 
-	// 可以有如下几种命令形式：
+
+
+	// 可以有如下两种命令形式：
+	//形式A:
 	//	write <文件名> ——在写指针当前所指位置写，写入内容代替原内容(代替方式或改写方式)
-	//	write <文件名> <n>——在文件开头第n个字节处写，改写方式
-	//	write <文件名> insert——在写指针所指位置写，写入处开始的原内容后移(插入方式)
-	//	write <文件名> <n> insert——在文件开头第n个字节处写，插入方式
-	//	write <文件名> append——在文件尾部写(添加方式)
-	
+	//	write <文件名> |pn——在文件开头第n个字节处写，改写方式
+	//	write <文件名> |ins——在写指针所指位置写，写入处开始的原内容后移(插入方式)
+	//	write <文件名> |pn |ins——在文件开头第n个字节处写，插入方式
+	//	write <文件名> |app——在文件尾部写(添加方式)
+	//	write <文件名> |del——对指定文件，从写指针位置删除到文件末尾
+	//  write <文件名> |lm |del——对指定文件，从写指针位置开始，删除m个字节
+	//  write <文件名> |pn |del——对指定文件，从指定位置n处开始删除到文件末尾
+	//  write <文件名> |pn |lm |del——对指定文件，从指定位置n处开始删除m个字节
+
+	//形式B：
+	//	write ——在写指针当前所指位置写，写入内容代替原内容(代替方式或改写方式)
+	//	write |pn——在文件开头第n个字节处写，改写方式
+	//	write |ins——在写指针所指位置写，写入处开始的原内容后移(插入方式)
+	//	write |pn |ins——在文件开头第n个字节处写，插入方式
+	//	write |app——在文件尾部写(添加方式)
+	//	write |del——对当前操作文件，从写指针位置删除到文件末尾
+	//  write |lm |del——对当前操作文件，从写指针位置开始，删除m个字节
+	//  write |pn |del——对当前操作文件，从指定位置n处开始删除到文件末尾
+	//  write |pn |lm |del——对当前操作文件，从指定位置n处开始删除m个字节
+
 	//【思考】如何使参数“insert”、“append”只要前3个字符对就可以，但多于3个字符也行。例如：
 	// 对于“insert”，输入ins、inse、inser、insert(不区分大小写)都可以，输入其它不行。
 
-	#define BSIZE 40*SIZE+1
-	short int ii,ii_uof,len0,len,len1,pos,ins=0;
-	short int bn0,bn1,jj,count=0;
-	char attrib='\0',Buffer[BSIZE];		//为方便计，假设一次最多写入2560字节
-	char *buf;
-	FCB *fcbp;
+#define BSIZE 40*SIZE+1
+	short int ii, ii_uof, len0, len, len1, pos, ins = 0, del = 0, mylen = 0, index, wpflag = 0;//wpflag=1表示在尾部添加
+	short int bn0, bn1, jj, count = 0;
+	char attrib = '\0', Buffer[BSIZE];		//为方便计，假设一次最多写入2560字节
+	char* buf;
+	char* nstr1, *nstr2, *nstr3, *delbuf;
+	FCB* fcbp;
 
-	if (k<1)
-	{
-		cout<<"\n命令中没有文件名。\n";
-		return -1;
-	}
-	FindPath(comd[1],attrib,0,fcbp);	//构成全路径且去掉“..”存于temppath中
-	ii_uof=Check_UOF(temppath);			//查UOF
-	if (ii_uof==S)
-	{
-		cout<<"\n文件"<<temppath<<"未打开或不存在，不能写文件。\n";
-		return -2;
-	}
-	if (uof[ii_uof].attr&'\01' && uof[ii_uof].state!=1)
-	{	//只读文件不是创建状态不能写
-		cout<<"\n"<<temppath<<"是只读文件，不能写。\n";
-		return -3;
-	}
-	if (k==1)
-		pos=uof[ii_uof].writep;	//从写指针所指位置开始写(write <文件名>)
-	else		//k=2或3
-	{
-		if (_strnicmp(comd[2],"app",3)==0)
-			pos=uof[ii_uof].fsize+1;	//文件尾部添加模式(write <文件名> append)
-		else if (_strnicmp(comd[2],"ins",3)==0)
-		{
-			pos=uof[ii_uof].writep;	//从当前写指针位置开始写
-			ins=1;					//插入模式(write <文件名> insert)
-		}
-		else
-		{
-			pos=atoi(comd[2]);		//从命令中指定位置写(write <文件名> <n>)
-			if (pos<=0)
-			{
-				cout<<"\n命令中提供的写入位置错误。\n";
-				return -4;
+	if (k < 1) {
+		//形式B:write ——在写指针当前所指位置写，写入内容代替原内容(代替方式或改写方式)
+		//a、首先找到文件
+		for (ii_uof = S - 1; ii_uof >= 0; ii_uof--) {
+			if (uof[ii_uof].state != 0) {
+				break;
 			}
-			if (k==3)
-			{
-				if (_strnicmp(comd[3],"ins",3)==0)
-					ins=1;			//插入模式(write <文件名> <n> insert)
-				else
-				{
-					cout<<"\n命令参数"<<comd[2]<<","<<comd[3]<<"错误\n";
-					return -5;
+		}
+		if (ii_uof < 0) {
+			cout << "无打开的文件可操作。" << endl;
+			return -3;
+		}
+		else if (uof[ii_uof].attr & '\01' && uof[ii_uof].state != 1) {
+			//只读文件不是创建状态不能写
+			cout << "\n" << temppath << "是只读文件，不能写。\n";
+			return -3;
+		}
+
+		//b确定：pos ins del wpflag mylen
+		pos = uof[ii_uof].writep;	//从写指针所指位置开始写(write <文件名>)
+		wpflag = 1;
+	}
+	else if (k == 1) {
+		//形式B:
+		//	write |pn——在文件开头第n个字节处写，改写方式
+		//	write |ins——在写指针所指位置写，写入处开始的原内容后移(插入方式)
+		//	write |app——在文件尾部写(添加方式)
+		//	write |del——对当前操作文件，从写指针位置删除到文件末尾
+
+		//形式A:
+		//	write <文件名> ——在写指针当前所指位置写，写入内容代替原内容(代替方式或改写方式)
+
+		if (comd[1][0] == '|') {
+			//a、首先找到文件
+			for (ii_uof = S - 1; ii_uof >= 0; ii_uof--) {
+				if (uof[ii_uof].state != 0) {
+					break;
 				}
 			}
+			if (ii_uof < 0) {
+				cout << "无打开的文件可操作。" << endl;
+				return -3;
+			}
+			else if (uof[ii_uof].attr & '\01' && uof[ii_uof].state != 1) {
+				//只读文件不是创建状态不能写
+				cout << "\n" << temppath << "是只读文件，不能写。\n";
+				return -3;
+			}
+			//b确定：pos ins del wpflag mylen
+			if (comd[1][1] == 'p' || comd[1][1] == 'P') {//	write |pn——在文件开头第n个字节处写，改写方式
+				nstr1 = &comd[1][2];
+				pos = atoi(nstr1);
+				if (pos <= 0)
+				{
+					cout << "\n命令中提供的写入位置错误。\n";
+					return -4;
+				}
+			}
+			else if (strnicmp(comd[1], "|ins", 4) == 0) {//	write |ins——在写指针所指位置写，写入处开始的原内容后移(插入方式)
+				pos = uof[ii_uof].writep;	//从当前写指针位置开始写
+				wpflag = 1;
+				ins = 1;					//插入模式
+			}
+			else if (strnicmp(comd[1], "|app", 4) == 0) {//	write |app——在文件尾部写(添加方式)
+				pos = uof[ii_uof].fsize + 1;	//文件尾部添加模式
+				wpflag = 1;
+			}
+			else if (strnicmp(comd[1], "|del", 4) == 0) {//	write |del——对当前操作文件，从写指针位置删除到文件末尾
+				pos = uof[ii_uof].writep;	//从当前写指针位置开始
+				del = 1;					//删除模式
+			}
+			else {
+				cout << "命令格式错误。" << endl;
+				return -3;
+			}
+		}
+		else {
+			//write <文件名> ——在写指针当前所指位置写，写入内容代替原内容(代替方式或改写方式)
+			//a、找到当前文件
+			FindPath(comd[1], attrib, 0, fcbp);	//构成全路径且去掉“..”存于temppath中
+			ii_uof = Check_UOF(temppath);			//查UOF
+			if (ii_uof == S)
+			{
+				cout << "\n文件" << temppath << "未打开或不存在，不能写文件。\n";
+				return -2;
+			}
+			if (uof[ii_uof].attr & '\01' && uof[ii_uof].state != 1)
+			{	//只读文件不是创建状态不能写
+				cout << "\n" << temppath << "是只读文件，不能写。\n";
+				return -3;
+			}
+			//b确定：pos ins del wpflag mylen
+			pos = uof[ii_uof].writep;	//从写指针所指位置开始写(write <文件名>)
+			wpflag = 1;
+		}
+
+
+	}
+	else if (k == 2) {
+		//形式B:
+		//	write |pn |ins——在文件开头第n个字节处写，插入方式
+		//  write |lm |del——对当前操作文件，从写指针位置开始，删除m个字节
+		//  write |pn |del——对当前操作文件，从指定位置n处开始删除到文件末尾
+
+		if (comd[1][0] == '|') {
+			//a、首先找到文件
+			for (ii_uof = S - 1; ii_uof >= 0; ii_uof--) {
+				if (uof[ii_uof].state != 0) {
+					break;
+				}
+			}
+			if (ii_uof < 0) {
+				cout << "无打开的文件可操作。" << endl;
+				return -3;
+			}
+			else if (uof[ii_uof].attr & '\01' && uof[ii_uof].state != 1) {
+				//只读文件不是创建状态不能写
+				cout << "\n" << temppath << "是只读文件，不能写。\n";
+				return -3;
+			}
+			//b确定：pos ins del wpflag mylen
+			if (comd[1][1] == 'p' || comd[1][1] == 'P') {
+				nstr1 = &comd[1][2];
+				pos = atoi(nstr1);
+				if (pos <= 0)
+				{
+					cout << "\n命令中提供的写入位置错误。\n";
+					return -4;
+				}
+				if (strnicmp(comd[2], "|ins", 4) == 0) {//	write |pn |ins——在文件开头第n个字节处写，插入方式
+					ins = 1;			//插入模式
+				}
+				else if (strnicmp(comd[2], "|del", 4) == 0) {//  write |pn |del——对当前操作文件，从指定位置n处开始删除到文件末尾
+					del = 1;		//删除模式
+
+				}
+				else {
+					cout << "命令参数" << comd[2] << "错误。" << endl;
+					return -3;
+				}
+			}
+			else if (comd[1][1] == 'l' || comd[1][1] == 'L') {//  write |lm |del——对当前操作文件，从写指针位置开始，删除m个字节
+				if (strnicmp(comd[2], "|del", 4) == 0) {
+					pos = uof[ii_uof].writep;	//从当前写指针位置开始写
+					nstr2 = &comd[1][2];
+					mylen = atoi(nstr2);
+					if (mylen <= 0) {
+						cout << "\n命令中提供的删除长度错误。\n";
+						return -4;
+					}
+					del = 1;		//删除模式
+
+				}
+				else {
+					cout << "命令参数" << comd[2] << "错误。" << endl;
+					return -3;
+				}
+			}
+			else {
+				cout << "命令参数" << comd[1] << "错误。" << endl;
+				return -3;
+			}
+		}
+		//形式A:
+		//	write <文件名> |pn——在文件开头第n个字节处写，改写方式
+		//	write <文件名> |ins——在写指针所指位置写，写入处开始的原内容后移(插入方式)
+		//	write <文件名> |app——在文件尾部写(添加方式)
+		//	write <文件名> |del——对指定文件，从写指针位置删除到文件末尾
+		else {
+			//a、找到当前文件
+			FindPath(comd[1], attrib, 0, fcbp);	//构成全路径且去掉“..”存于temppath中
+			ii_uof = Check_UOF(temppath);			//查UOF
+			if (ii_uof == S)
+			{
+				cout << "\n文件" << temppath << "未打开或不存在，不能写文件。\n";
+				return -2;
+			}
+			if (uof[ii_uof].attr & '\01' && uof[ii_uof].state != 1)
+			{	//只读文件不是创建状态不能写
+				cout << "\n" << temppath << "是只读文件，不能写。\n";
+				return -3;
+			}
+			//b确定：pos ins del wpflag mylen
+			if (comd[2][0] == '|' && (comd[2][1] == 'p' || comd[2][1] == 'P')) {//	write <文件名> |pn——在文件开头第n个字节处写，改写方式
+				nstr1 = &comd[2][2];
+				pos = atoi(nstr1);
+				if (pos <= 0)
+				{
+					cout << "\n命令中提供的写入位置错误。\n";
+					return -4;
+				}
+			}
+			else if (strnicmp(comd[2], "|ins", 4) == 0) {//	write <文件名> |ins——在写指针所指位置写，写入处开始的原内容后移(插入方式)
+				pos = uof[ii_uof].writep;	//从当前写指针位置开始写
+				wpflag = 1;
+				ins = 1;					//插入模式
+			}
+			else if (strnicmp(comd[2], "|app", 4) == 0) {//	write <文件名> |app——在文件尾部写(添加方式)
+				pos = uof[ii_uof].fsize + 1;	//文件尾部添加模式(write <文件名> append)
+				wpflag = 1;
+			}
+			else if (strnicmp(comd[2], "|del", 4) == 0) {//	write <文件名> |del——对指定文件，从写指针位置删除到文件末尾
+				pos = uof[ii_uof].writep;	//从当前写指针位置开始写
+				del = 1;		//删除模式
+
+			}
+			else {
+				cout << "命令参数" << comd[2] << "错误。" << endl;
+				return -3;
+			}
+		}
+
+	}
+	else if (k == 3) {
+		//形式B:
+		//  write |pn |lm |del——对当前操作文件，从指定位置n处开始删除m个字节
+		if (comd[1][0] == '|') {
+			//a、首先找到文件
+			for (ii_uof = S - 1; ii_uof >= 0; ii_uof--) {
+				if (uof[ii_uof].state != 0) {
+					break;
+				}
+			}
+			if (ii_uof < 0) {
+				cout << "无打开的文件可操作。" << endl;
+				return -3;
+			}
+			else if (uof[ii_uof].attr & '\01' && uof[ii_uof].state != 1) {
+				//只读文件不是创建状态不能写
+				cout << "\n" << temppath << "是只读文件，不能写。\n";
+				return -3;
+			}
+			//b确定：pos ins del wpflag mylen
+			if (comd[1][0] != '|' || (comd[1][1] != 'p' && comd[1][1] != 'P')) {
+				cout << "命令参数" << comd[1] << "错误。" << endl;
+				return -3;
+			}
+			else if (comd[2][0] != '|' || (comd[2][1] != 'l' && comd[2][1] != 'L')) {
+				cout << "命令参数" << comd[2] << "错误。" << endl;
+				return -3;
+			}
+			else if (strnicmp(comd[3], "|del", 4) != 0) {
+				cout << "命令参数" << comd[3] << "错误。" << endl;
+				return -3;
+			}
+			else {
+				nstr1 = &comd[1][2];
+				pos = atoi(nstr1);
+				if (pos <= 0)
+				{
+					cout << "\n命令中提供的删除位置错误。\n";
+					return -4;
+				}
+				nstr2 = &comd[2][2];
+				mylen = atoi(nstr2);
+				if (mylen <= 0) {
+					cout << "\n命令中提供的删除长度错误。\n";
+					return -4;
+				}
+				del = 1;
+
+			}
+		}
+		//形式A：
+		//	write <文件名> |pn |ins——在文件开头第n个字节处写，插入方式
+		//  write <文件名> |lm |del——对指定文件，从写指针位置开始，删除m个字节
+		//  write <文件名> |pn |del——对指定文件，从指定位置n处开始删除到文件末尾
+		else {
+			//a、找到当前文件
+			FindPath(comd[1], attrib, 0, fcbp);	//构成全路径且去掉“..”存于temppath中
+			ii_uof = Check_UOF(temppath);			//查UOF
+			if (ii_uof == S)
+			{
+				cout << "\n文件" << temppath << "未打开或不存在，不能写文件。\n";
+				return -2;
+			}
+			if (uof[ii_uof].attr & '\01' && uof[ii_uof].state != 1)
+			{	//只读文件不是创建状态不能写
+				cout << "\n" << temppath << "是只读文件，不能写。\n";
+				return -3;
+			}
+			//b确定：pos ins del wpflag mylen
+			if (comd[2][0] == '|' && (comd[2][1] == 'p' || comd[2][1] == 'P')) {
+				nstr1 = &comd[2][2];
+				pos = atoi(nstr1);
+				if (pos <= 0)
+				{
+					cout << "\n命令中提供的写入位置错误。\n";
+					return -4;
+				}
+				if (strnicmp(comd[3], "|ins", 4) == 0) {//	write <文件名> |pn |ins——在文件开头第n个字节处写，插入方式
+					ins = 1;			//插入模式
+				}
+				else if (strnicmp(comd[3], "|del", 4) == 0) {//  write <文件名> |pn |del——对指定文件，从指定位置n处开始删除到文件末尾
+					del = 1;			//删除模式
+				}
+				else {
+					cout << "命令参数" << comd[3] << "错误。" << endl;
+					return -3;
+				}
+			}
+			else if (comd[2][0] == '|' && (comd[2][1] == 'l' || comd[2][1] == 'L')) {//  write <文件名> |lm |del——对指定文件，从写指针位置开始，删除m个字节
+
+				if (strnicmp(comd[3], "|del", 4) == 0) {
+					pos = uof[ii_uof].writep;	//从当前写指针位置开始写
+					nstr2 = &comd[2][2];
+					mylen = atoi(nstr2);
+					if (mylen <= 0) {
+						cout << "\n命令中提供的删除长度错误。\n";
+						return -4;
+					}
+
+					del = 1;
+				}
+				else {
+					cout << "命令参数" << comd[3] << "错误。" << endl;
+					return -3;
+				}
+			}
+			else {
+				cout << "命令参数" << comd[2] << "错误。" << endl;
+				return -3;
+			}
+
 		}
 	}
-	if (pos<=0)
+	else if (k == 4) {
+		//形式A:
+		//  write <文件名> |pn |lm |del——对指定文件，从指定位置n处开始删除m个字节
+
+
+		//形式B: 错误
+		if (comd[1][0] == '|') {	//形式B中k不可能为3
+			cout << "命令参数错误。" << endl;
+			return -3;
+		}
+		else {
+			//a、找到当前文件
+			FindPath(comd[1], attrib, 0, fcbp);	//构成全路径且去掉“..”存于temppath中
+			ii_uof = Check_UOF(temppath);			//查UOF
+			if (ii_uof == S)
+			{
+				cout << "\n文件" << temppath << "未打开或不存在，不能写文件。\n";
+				return -2;
+			}
+			if (uof[ii_uof].attr & '\01' && uof[ii_uof].state != 1)
+			{	//只读文件不是创建状态不能写
+				cout << "\n" << temppath << "是只读文件，不能写。\n";
+				return -3;
+			}
+			//b确定：pos ins del wpflag mylen
+			//  write <文件名> |pn |lm |del——对指定文件，从指定位置n处开始删除m个字节
+			if (comd[2][0] != '|' || (comd[2][1] != 'p' && comd[2][1] != 'P')) {
+				cout << "命令参数" << comd[2] << "错误。" << endl;
+				return -3;
+			}
+			else if (comd[3][0] != '|' || (comd[3][1] != 'l' && comd[3][1] != 'L')) {
+				cout << "命令参数" << comd[3] << "错误。" << endl;
+				return -3;
+			}
+			else if (strnicmp(comd[4], "|del", 4) != 0) {
+				cout << "命令参数" << comd[4] << "错误。" << endl;
+				return -3;
+			}
+			else {
+				nstr1 = &comd[2][2];
+				pos = atoi(nstr1);
+				if (pos <= 0)
+				{
+					cout << "\n命令中提供的写入位置错误。\n";
+					return -4;
+				}
+				nstr2 = &comd[3][2];
+				mylen = atoi(nstr2);
+				if (mylen <= 0) {
+					cout << "\n命令中提供的删除长度错误。\n";
+					return -4;
+				}
+				del = 1;	//删除模式
+			}
+		}
+	}
+	else {
+		cout << "错误：命令参数个数太多" << endl;
+		return  -1;
+	}
+
+
+	/************************************************************************************************************************/
+	if (pos <= 0)
 	{
-		cout<<"\n命令中提供的写入位置错误。\n";
+		cout << "\n命令中提供的写入或删除位置错误。\n";
 		return -1;
 	}
-	if (pos>=uof[ii_uof].fsize+1)
+	if (pos >= uof[ii_uof].fsize + 1)
 	{
-		pos=uof[ii_uof].fsize+1;
-		ins=0;						//这种情况不会是插入方式
+		pos = uof[ii_uof].fsize + 1;
+		ins = 0;						//这种情况不会是插入方式
 	}
 
 	pos--;							//使pos从0开始
 
-	cout<<"\n请输入写入文件的内容(最多允许输入"<<sizeof(Buffer)-1<<"个字节)：\n";
-	cin.getline(Buffer,BSIZE);
-	len1=strlen(Buffer);
-	if (len1==0)			//输入长度为0,不改变文件
-		return 0;
-	fcbp=uof[ii_uof].fp;
-	len0=uof[ii_uof].fsize;				//取文件原来的长度值
-	if (len0==0)						//若是空文件
-	{
-		ii=buffer_to_file(fcbp,Buffer);
-		if(ii==0)	//写文件失败
-			return ii;
-		uof[ii_uof].fsize=uof[ii_uof].fp->Fsize;
-		uof[ii_uof].faddr=uof[ii_uof].fp->Addr;
-		uof[ii_uof].readp=1;
-		uof[ii_uof].writep=uof[ii_uof].fsize+1;
+	if (del) {
+		fcbp = uof[ii_uof].fp;
+		len0 = uof[ii_uof].fsize;				//取文件原来的长度值
+		if (len0 == 0)						//若是空文件
+		{
+			cout << uof[ii_uof].fname << "是空文件，不能进行删除方式‘写’操作。" << endl;
+			return 1;
+		}
+		//以下处理文件非空的情况
+
+		buf = new char[len0 + 1];
+		file_to_buffer(fcbp, buf);		//文件读到buf
+		if (mylen == 0) {//从pos位置删除到文件末尾
+			buf[pos] = '\0';
+
+			ii = buffer_to_file(fcbp, buf);
+			if (ii == 0)	//写文件失败
+				return ii;
+			uof[ii_uof].fsize = uof[ii_uof].fp->Fsize;
+			uof[ii_uof].writep = uof[ii_uof].fsize + 1;
+			cout << "\n删除方式‘写’操作" << uof[ii_uof].fname << "成功.\n";
+			return 1;
+		}
+		else {//从pos位置开始，删除mylen个字节
+
+			delbuf = &buf[pos + mylen];
+			buf[pos] = '\0';
+			strcat(buf, delbuf);	//把delbuf所指字符串添加到buf结尾处(覆盖buf结尾处的 ‘\0’)并添加 ‘\0’
+
+			ii = buffer_to_file(fcbp, buf);
+			if (ii == 0)	//写文件失败
+				return ii;
+			uof[ii_uof].fsize = uof[ii_uof].fp->Fsize;
+			uof[ii_uof].writep = uof[ii_uof].fsize + 1;
+			cout << "\n删除方式‘写’操作" << uof[ii_uof].fname << "成功.\n";
+			return 1;
+
+		}
+	}
+	else {
+		cout << "\n请输入写入文件的内容(最多允许输入" << sizeof(Buffer) - 1 << "个字节)：\n";
+		cin.getline(Buffer, BSIZE);
+		len1 = strlen(Buffer);
+		if (len1 == 0)			//输入长度为0,不改变文件
+			return 0;
+		fcbp = uof[ii_uof].fp;
+		len0 = uof[ii_uof].fsize;				//取文件原来的长度值
+		if (len0 == 0)						//若是空文件
+		{
+			ii = buffer_to_file(fcbp, Buffer);
+			if (ii == 0)	//写文件失败
+				return ii;
+			uof[ii_uof].fsize = uof[ii_uof].fp->Fsize;
+			uof[ii_uof].faddr = uof[ii_uof].fp->Addr;
+			uof[ii_uof].readp = 1;
+			uof[ii_uof].writep = uof[ii_uof].fsize + 1;
+			return 1;
+		}
+		//以下处理文件非空的情况
+		len = len1 + pos + ins * (len0 - pos);		//计算写入完成后文件的长度
+		bn0 = len0 / SIZE + (short)(len0 % SIZE > 0);	//文件原来占用的盘块数
+		bn1 = len / SIZE + (short)(len % SIZE > 0);		//写入后文件将占用的盘块数
+		if (FAT[0] < bn1 - bn0)
+		{
+			cout << "\n磁盘空间不足,不能写入文件.\n";
+			return -1;
+		}
+		buf = new char[len + 1];
+		if (buf == 0)
+		{
+			cout << "\n分配内存失败。\n";
+			return -1;
+		}
+		file_to_buffer(fcbp, buf);		//文件读到buf
+		if (ins)	//若是插入方式
+		{
+			for (ii = len0; ii >= pos; ii--)
+				buf[ii + len1] = buf[ii];	//后移,空出后插入Buffer
+			jj = pos;
+			ii = 0;
+			while (Buffer[ii] != '\0')		//Buffer插入到buf
+				buf[jj++] = Buffer[ii++];
+
+			if (wpflag)
+				buf[jj] = '\0';
+		}
+		else {//若是改写方式		
+			//不能仅是这样处理：strcpy(&buf[pos],Buffer);
+			ii = pos;
+			for (index = 0; index <= len1 && Buffer[index] != '\0'; index++) {
+				buf[ii] = Buffer[index];
+				ii++;
+			}
+			if (wpflag)
+				buf[ii] = '\0';
+		}
+
+		buffer_to_file(fcbp, buf);
+		//if(buf)
+		//delete [] buf;
+		uof[ii_uof].fsize = uof[ii_uof].fp->Fsize;
+		uof[ii_uof].writep = uof[ii_uof].fsize + 1;
+		cout << "\n写文件" << uof[ii_uof].fname << "成功.\n";
 		return 1;
 	}
-	//以下处理文件非空的情况
-	len=len1+pos+ins*(len0-pos);		//计算写入完成后文件的长度
-	bn0=len0/SIZE+(short)(len0%SIZE>0);	//文件原来占用的盘块数
-	bn1=len/SIZE+(short)(len%SIZE>0);		//写入后文件将占用的盘块数
-	if (FAT[0]<bn1-bn0)
-	{
-		cout<<"\n磁盘空间不足,不能写入文件.\n";
-		return -1;
-	}
-	buf=new char[len+1];
-	if (buf==0)
-	{
-		cout<<"\n分配内存失败。\n";
-		return -1;
-	}
-	file_to_buffer(fcbp,buf);		//文件读到buf
-	if (ins)	//若是插入方式
-	{
-		for (ii=len0;ii>=pos;ii--)
-			buf[ii+len1]=buf[ii];	//后移,空出后插入Buffer
-		jj=pos;
-		ii=0;
-		while (Buffer[ii]!='\0')		//Buffer插入到buf
-			buf[jj++]=Buffer[ii++];
-	}
-	else		//若是改写方式
-		strcpy(&buf[pos],Buffer);
-	buffer_to_file(fcbp,buf);
-	delete [] buf;
-	uof[ii_uof].fsize=uof[ii_uof].fp->Fsize;
-	uof[ii_uof].writep=uof[ii_uof].fsize+1;
-	cout<<"\n写文件"<<uof[ii_uof].fname<<"成功.\n";
-	return 1;
+
 }
 
 ////////////////////////////////////////////////////////////////
 
 int CloseComd(int k)				//close命令的处理函数：关闭文件 
 {
-	// close <文件名>，若指定文件已打开，则关闭之，即从UOF中删除该文件
+	// close [<文件名>]，若指定文件已打开，则关闭之，即从UOF中删除该文件
 	// 对应的表项。若文件未打开或文件不存在，分别给出有关信息。
-
+	//关闭指定文件。若命令中未指定文件，则关闭“当前操作文件”。
+	//所谓“当前操作文件”，是指上一次使用create、open、write、read、rewind或fseek等命令操作过的文件。
 	int i_uof;
-	char attrib='\0';
-	FCB *p;
-	if (k<1)
+	char attrib = '\0';
+	FCB* p;
+	if (k < 1)
 	{
-		cout<<"\n命令中缺少文件名。\n";
-		return -1;
+		//cout << "\n命令中缺少文件名。\n";
+		//return -1;
+		//在UOF表中寻找最后打开的文件
+		for (i_uof = S - 1; i_uof >= 0; i_uof--) {
+			if (uof[i_uof].state != 0) {
+				break;
+			}
+		}
+		if (i_uof < 0) {
+			cout << "当前没有文件可关闭。" << endl;
+		}
+		else {
+			uof[i_uof].state = 0;			//在UOF中清除该文件登记栏
+			p = uof[i_uof].fp;			//取该文件的目录项位置指针
+			p->Addr = uof[i_uof].faddr;	//保存文件的首块号
+			p->Fsize = uof[i_uof].fsize;	//保存文件的大小
+			cout << "\n关闭文件" << uof[i_uof].fname << "成功。\n";
+		}
 	}
-	FindPath(comd[1],attrib,0,p);	//构成全路径且去掉“..”存于temppath中
-	i_uof=Check_UOF(temppath);		//查UOF
-	if (i_uof==S)
-		cout<<"\n文件"<<temppath<<"未打开或不存在，不能关闭。\n";
-	else
-	{
-		uof[i_uof].state=0;			//在UOF中清除该文件登记栏
-		p=uof[i_uof].fp;			//取该文件的目录项位置指针
-		p->Addr=uof[i_uof].faddr;	//保存文件的首块号
-		p->Fsize=uof[i_uof].fsize;	//保存文件的大小
-		cout<<"\n关闭文件"<<temppath<<"成功。\n";
+	else {
+		FindPath(comd[1], attrib, 0, p);	//构成全路径且去掉“..”存于temppath中
+		i_uof = Check_UOF(temppath);		//查UOF
+		if (i_uof == S)
+			cout << "\n文件" << temppath << "未打开或不存在，不能关闭。\n";
+		else
+		{
+			uof[i_uof].state = 0;			//在UOF中清除该文件登记栏
+			p = uof[i_uof].fp;			//取该文件的目录项位置指针
+			p->Addr = uof[i_uof].faddr;	//保存文件的首块号
+			p->Fsize = uof[i_uof].fsize;	//保存文件的大小
+			cout << "\n关闭文件" << temppath << "成功。\n";
+		}
 	}
 	return 1;
 }
@@ -1955,99 +2435,336 @@ int UndelComd(int k)		//undel命令
 
 int ReadComd(int k)		//read命令的处理函数：读文件 
 {
-	// 读文件：read <文件名> [<位置m> [<字节数n>]，从已打开的文件读文件内容并显示。若无
+	//读指令的两个关键信息就是 pos 和readc
+	// 读文件：read [<文件名>] [<位置m>] [<字节数n>]，从已打开的文件读文件内容并显示。若无
 	// “位置”参数，则从读指针所指位置开始读。若有"位置"参数，则从指定位置处开始读。位
 	// 置m是指从文件开头第m个字节处读（m从1开始编号）。若无"字节数"参数，则从指定位置读
 	// 到文件末尾；若有"字节数n"参数，则从指定位置开始读n个字节。每读一个字节，读指针后
 	// 移一个字节。若文件未打开或文件不存在，分别给出错误信息。
-	// read命令有如下几种形式：
-	//		read <文件名>——从读指针开始读文件，一直读到文件末尾为止。
-	//		read <文件名> <位置m>——从文件第m个字节开始，一直读到文件末尾为止。
-	//		read <文件名> <位置m> <字节数n>>——从文件第m个字节开始，共读n个字节。
+	// read命令有如下两种种形式：
+	//形式A:
+	//	read <文件名>——从读指针位置开始读到文件尾部
+	//	read <文件名> | pm——读指定文件，从指定位置m开始读到文件尾部(新增形式)
+	//	read <文件名> | ln——读指定文件，从读指针位置开始读n个字节(新增形式)
+	//	read <文件名> | pm | ln——读指定文件，从指定位置m开始读n个字节(新增形式)
+
+	//形式B:
+	//	read——读当前操作文件，从读指针位置开始读到文件尾部(新增形式)
+	//	read | pm——读当前操作文件，从指定位置m开始读到文件尾部(新增形式)
+	//	read | ln——读当前操作文件，从读指针位置开始读n个字节(新增形式)
+	//	read | pm | ln——读当前操作文件，从指定位置m开始读n个字节(新增形式)
+
 	// 说明：刚打开的文件，其读指针指向文件开头(即读指针等于1)，约定空文件的读指针等于0。
 
-	short i,j,ii,i_uof,pos,offset;
-	short b,b0,bnum,count=0,readc;
-	char attrib='\0';
-	char Buffer[SIZE+1];
+	short i, j, ii, i_uof, pos, offset;
+	short b, b0, bnum, count = 0, readc;
+	char attrib = '\0';
+	char Buffer[SIZE + 1];
+	char* nstr, *nstr1, *nstr2;
 	FCB* fcbp;
 
-	if (k<1 || k>3)
-	{
-		cout<<"\n命令中参数个数太多或太少。\n";
-		return -1;
-	}
-	FindPath(comd[1],attrib,0,fcbp);	//构成全路径且去掉“..”存于temppath中
-	i_uof=Check_UOF(temppath);			//查UOF
-	if (i_uof==S)
-	{
-		cout<<"\n文件"<<temppath<<"未打开或不存在，不能读文件。\n";
-		return -2;
-	}
-	if (uof[i_uof].readp==0)
-	{
-		cout<<"\n文件"<<temppath<<"是空文件。\n";
-		return 1;
-	}
-	if (k==1)				//参数个数k=1的情况(无参数m和n)
-	{
-		pos=uof[i_uof].readp;//从读指针所指位置开始读
-		if (pos>uof[i_uof].fsize)
-		{
-			cout<<"\n读指针已指向文件尾部，无可读信息。\n";
-			return 1;
+	if (k < 1) {	//read 读当前操作文件，从读指针位置开始读到文件尾部
+		for (i_uof = S - 1; i_uof >= 0; i_uof--) {
+			if (uof[i_uof].state != 0) {
+				break;
+			}
 		}
-		readc=uof[i_uof].fsize-pos+1;	//读到文件尾部共需读readc个字节
-	}
-	else					//k=2或k=3的情况
-	{
-		pos=atoi(comd[2]);		//从命令中指定位置写
-		if (pos<=0 || pos>uof[i_uof].fsize)
-		{
-			cout<<"\n命令中提供的读位置错误。\n";
+		if (i_uof < 0) {
+			cout << "无打开的文件可操作。" << endl;
 			return -3;
 		}
-		readc=uof[i_uof].fsize-pos+1;	//读到文件尾部共需读readc个字节
-		if (k==3)
-		{
-			readc=atoi(comd[3]);
-			if (readc<1)
+		else if (uof[i_uof].readp == 0) {
+			cout << "\n文件" << temppath << "是空文件。\n";
+			return 1;
+		}
+		else {
+			pos = uof[i_uof].readp;//从读指针所指位置开始读
+			if (pos > uof[i_uof].fsize)
 			{
-				cout<<"\n命令中提供的读字节数错误。\n";
-				return -4;
+				cout << "\n读指针已指向文件尾部，无可读信息。\n";
+				return 1;
 			}
-			if (readc>uof[i_uof].fsize-pos+1)
-				readc=uof[i_uof].fsize-pos+1;
+			readc = uof[i_uof].fsize - pos + 1;	//读到文件尾部共需读readc个字节
+		}
+
+	}
+	else if (k == 1) {
+		//形式B: 
+		//  read |pm——读当前操作文件，从指定位置m开始读到文件尾部(新增形式)
+		//	read |ln——读当前操作文件，从读指针位置开始读n个字节(新增形式)
+		if (comd[1][0] == '|') {
+			//a、首先找到该文件
+			for (i_uof = S - 1; i_uof >= 0; i_uof--) {
+				if (uof[i_uof].state != 0) {
+					break;
+				}
+			}
+			if (i_uof < 0) {
+				cout << "无打开的文件可操作。" << endl;
+				return -3;
+			}
+			else if (uof[i_uof].readp == 0) {
+				cout << "\n文件" << temppath << "是空文件。\n";
+				return 1;
+			}
+			else {
+				//b、确定pos 和readc
+				if (comd[1][1] == 'p' || comd[1][1] == 'P') {
+					// read |p2
+					nstr1 = &comd[1][2];
+					pos = atoi(nstr1);	//从命令中指定位置读
+					if (pos <= 0 || pos > uof[i_uof].fsize)
+					{
+						cout << "\n命令中提供的读位置错误。\n";
+						return -3;
+					}
+					readc = uof[i_uof].fsize - pos + 1;	//读到文件尾部共需读readc个字节
+				}
+				else if (comd[1][1] == 'l' || comd[1][1] == 'L') {
+					//read |l2  从读指针位置开始读n个字节,所以要初始化pos
+					pos = uof[i_uof].readp;//从读指针所指位置开始读
+					if (pos > uof[i_uof].fsize)
+					{
+						cout << "\n读指针已指向文件尾部，无可读信息。\n";
+						return 1;
+					}
+
+					nstr2 = &comd[1][2];
+					readc = atoi(nstr2);
+					if (readc < 1)
+					{
+						cout << "\n命令中提供的读字节数错误。\n";
+						return -4;
+					}
+					if (readc > uof[i_uof].fsize - pos + 1)
+						readc = uof[i_uof].fsize - pos + 1;
+				}
+				else {
+					cout << "参数" << comd[1] << "错误。" << endl;
+					return -3;
+				}
+			}
+
+		}
+		else {//形式A：read <文件名>——从读指针位置开始读到文件尾部
+			//a、首先找到该文件
+			FindPath(comd[1], attrib, 0, fcbp);	//构成全路径且去掉“..”存于temppath中
+			i_uof = Check_UOF(temppath);			//查UOF
+			if (i_uof == S)
+			{
+				cout << "\n文件" << temppath << "未打开或不存在，不能读文件。\n";
+				return -2;
+			}
+			if (uof[i_uof].readp == 0)
+			{
+				cout << "\n文件" << temppath << "是空文件。\n";
+				return 1;
+			}
+
+			//b、确定pos 和readc
+			pos = uof[i_uof].readp;//从读指针所指位置开始读
+			if (pos > uof[i_uof].fsize)
+			{
+				cout << "\n读指针已指向文件尾部，无可读信息。\n";
+				return 1;
+			}
+			readc = uof[i_uof].fsize - pos + 1;	//读到文件尾部共需读readc个字节
+		}
+
+	}
+	else if (k == 2) {
+		//形式B：read |pm |ln——读当前操作文件，从指定位置m开始读n个字节(新增形式)
+		if (comd[1][0] == '|') {
+			//a、首先找到该文件
+			for (i_uof = S - 1; i_uof >= 0; i_uof--) {
+				if (uof[i_uof].state != 0) {
+					break;
+				}
+			}
+			if (i_uof < 0) {
+				cout << "无打开的文件可操作。" << endl;
+				return -3;
+			}
+			else if (uof[i_uof].readp == 0) {
+				cout << "\n文件" << temppath << "是空文件。\n";
+				return 1;
+			}
+			else {
+				//b、确定pos 和readc
+				if (comd[1][1] != 'p'&& comd[1][1] != 'P') {
+					cout << "参数" << comd[1] << "错误。" << endl;
+					return -3;
+				}
+				else if (comd[2][0] != '|' || (comd[2][1] != 'l'&& comd[2][1] != 'L')) {
+					cout << "参数" << comd[2] << "错误。" << endl;
+					return -3;
+				}
+				else {
+					//pos
+					nstr1 = &comd[1][2];
+					pos = atoi(nstr1);	//从命令中指定位置读
+					if (pos <= 0 || pos > uof[i_uof].fsize)
+					{
+						cout << "\n命令中提供的读位置错误。\n";
+						return -3;
+					}
+					//readc
+					nstr2 = &comd[2][2];
+					readc = atoi(nstr2);
+					if (readc < 1)
+					{
+						cout << "\n命令中提供的读字节数错误。\n";
+						return -4;
+					}
+					if (readc > uof[i_uof].fsize - pos + 1)
+						readc = uof[i_uof].fsize - pos + 1;
+				}
+			}
+		}
+		else {
+			//形式A：
+			//  read <文件名> |pm——读指定文件，从指定位置m开始读到文件尾部(新增形式)
+			//	read <文件名> |ln——读指定文件，从读指针位置开始读n个字节(新增形式)
+
+			//a、首先找到该文件
+			FindPath(comd[1], attrib, 0, fcbp);	//构成全路径且去掉“..”存于temppath中
+			i_uof = Check_UOF(temppath);			//查UOF
+			if (i_uof == S)
+			{
+				cout << "\n文件" << temppath << "未打开或不存在，不能读文件。\n";
+				return -2;
+			}
+			if (uof[i_uof].readp == 0)
+			{
+				cout << "\n文件" << temppath << "是空文件。\n";
+				return 1;
+			}
+
+			//b、确定pos 和readc
+			if (comd[2][0] == '|' && (comd[2][1] == 'p' || comd[2][1] == 'P')) {//  read <文件名> |pm——读指定文件，从指定位置m开始读到文件尾部(新增形式)
+				// read boy |p2
+				nstr1 = &comd[2][2];
+				pos = atoi(nstr1);	//从命令中指定位置读
+				if (pos <= 0 || pos > uof[i_uof].fsize)
+				{
+					cout << "\n命令中提供的读位置错误。\n";
+					return -3;
+				}
+				readc = uof[i_uof].fsize - pos + 1;	//读到文件尾部共需读readc个字节
+			}
+			else if (comd[2][0] == '|' && (comd[2][1] == 'l' || comd[2][1] == 'L')) {//read <文件名> |ln——读指定文件，从读指针位置开始读n个字节(新增形式)
+				//read boy |l2  从读指针位置开始读n个字节,所以要初始化pos
+				pos = uof[i_uof].readp;//从读指针所指位置开始读
+				if (pos > uof[i_uof].fsize)
+				{
+					cout << "\n读指针已指向文件尾部，无可读信息。\n";
+					return 1;
+				}
+
+				nstr2 = &comd[2][2];
+				readc = atoi(nstr2);
+				if (readc < 1)
+				{
+					cout << "\n命令中提供的读字节数错误。\n";
+					return -4;
+				}
+				if (readc > uof[i_uof].fsize - pos + 1)
+					readc = uof[i_uof].fsize - pos + 1;
+			}
+			else {
+				cout << "参数" << comd[2] << "错误。" << endl;
+				return -3;
+			}
+		}
+
+	}
+	else if (k == 3) {
+		//形式A：
+		//  read <文件名> | pm | ln——读指定文件，从指定位置m开始读n个字节(新增形式)
+
+		//形式B:
+		//错误
+		if (comd[1][0] == '|') {	//形式B中k不可能为3
+			cout << "命令参数错误。" << endl;
+			return -3;
+		}
+		else {
+			//a、首先找到该文件
+			FindPath(comd[1], attrib, 0, fcbp);	//构成全路径且去掉“..”存于temppath中
+			i_uof = Check_UOF(temppath);			//查UOF
+			if (i_uof == S)
+			{
+				cout << "\n文件" << temppath << "未打开或不存在，不能读文件。\n";
+				return -2;
+			}
+			if (uof[i_uof].readp == 0)
+			{
+				cout << "\n文件" << temppath << "是空文件。\n";
+				return 1;
+			}
+
+			//b、确定pos 和readc
+			//read boy |p2 |l10
+			if (comd[2][0] == '|' && (comd[2][1] == 'p' || comd[2][1] == 'P') && comd[3][0] == '|' && (comd[3][1] == 'l' || comd[3][1] == 'L')) {
+				//pos
+				nstr1 = &comd[2][2];
+				pos = atoi(nstr1);	//从命令中指定位置读
+				if (pos <= 0 || pos > uof[i_uof].fsize)
+				{
+					cout << "\n命令中提供的读位置错误。\n";
+					return -3;
+				}
+				//readc
+				nstr2 = &comd[3][2];
+				readc = atoi(nstr2);
+				if (readc < 1)
+				{
+					cout << "\n命令中提供的读字节数错误。\n";
+					return -4;
+				}
+				if (readc > uof[i_uof].fsize - pos + 1)
+					readc = uof[i_uof].fsize - pos + 1;
+			}
+			else {
+				cout << "指令格式错误" << endl;
+				return -3;
+			}
 		}
 	}
-	bnum=(pos-1)/SIZE;		//从文件的第bnum块读(bnum从0开始编号)
-	offset=(pos-1)%SIZE;	//在第bnum块的偏移位置offset处开始读(offset从0开始)
-	b=uof[i_uof].faddr;		//取文件首块号
-	for (i=0;i<bnum;i++)	//寻找读入的第一个盘块号
-	{
-		b0=b;
-		b=FAT[b];
+	else {
+		cout << "命令中参数个数太多。" << endl;
+		return -3;
 	}
-	ii=offset;
-	while (count<readc)		//读文件至Buffer并显示之
+
+
+	bnum = (pos - 1) / SIZE;		//从文件的第bnum块读(bnum从0开始编号)
+	offset = (pos - 1) % SIZE;	//在第bnum块的偏移位置offset处开始读(offset从0开始)
+	b = uof[i_uof].faddr;		//取文件首块号
+	for (i = 0; i < bnum; i++)	//寻找读入的第一个盘块号
 	{
-		for (i=ii,j=0;i<SIZE;i++,j++)
+		b0 = b;
+		b = FAT[b];
+	}
+	ii = offset;
+	while (count < readc)		//读文件至Buffer并显示之
+	{
+		for (i = ii, j = 0; i < SIZE; i++, j++)
 		{
-			Buffer[j]=Disk[b][i];
+			Buffer[j] = Disk[b][i];
 			count++;
-			if (count==readc)
+			if (count == readc)
 			{
 				j++;
 				break;
 			}
 		}
-		Buffer[j]='\0';
-		cout<<Buffer;
-		ii=0;
-		b=FAT[b];		//准备读下一个盘块
+		Buffer[j] = '\0';
+		cout << Buffer;
+		ii = 0;
+		b = FAT[b];		//准备读下一个盘块
 	}
-	cout<<endl;
-	uof[i_uof].readp=pos+readc;	//调整读指针
+	cout << endl;
+	uof[i_uof].readp = pos + readc;	//调整读指针
 	return 1;
 }
 
@@ -2184,39 +2901,100 @@ int CopyComd(int k)		//copy命令的处理函数：复制文件
 
 int FseekComd(int k)	//fseek命令的处理函数 
 {
-	// 命令形式：fseek <文件名> <n>
+	// 命令形式：fseek [<文件名>] |p<n>
 	// 功能：将读、写指针移到指定位置n处
-
-	int i_uof,n;
-	char attrib='\0';
+	//此处“ | p”表示位置，“<n>”表示某个整数
+	//fseek <文件名> |p<n>——将指定文件的读、写指针移到文件第n字节处。
+	//fseek |p<n>——将当前操作文件的读、写指针移到文件第n字节处（新增形式）
+	//为了将文件名与位置参数区别开来，位置参数前加字符“|”以便与文件名区别。
+	int i_uof, n;
+	char attrib = '\0';
 	FCB* fcbp;
+	char* nstr;
 
-	if (k!=2)
+	if (k < 1)
 	{
-		cout<<"\n命令参数个数错误。本命令必须有2个参数。\n";
+		cout << "\n命令中参数个数错误。\n";
 		return -1;
 	}
-	n=atoi(comd[2]);
-	FindPath(comd[1],attrib,0,fcbp);		//构成全路径且去掉“..”存于temppath中
-	i_uof=Check_UOF(temppath);		//查UOF
-	if (i_uof==S)
-	{
-		cout<<"\n文件"<<temppath<<"未打开或不存在，不能操作。\n";
-		return -2;					//操作失败返回
+	else if (k == 1) {	//fseek |p<n>——将当前操作文件的读、写指针移到文件第n字节处（新增形式）
+		//这里老师所给的功能完整程序中没有进行判断
+		if (comd[1][0] != '|' || comd[1][1] != 'p') {
+			cout << "指令格式错误" << endl;
+			return -2;
+		}
+		//取出n
+		nstr = &comd[1][2];
+		//cout << nstr << endl;
+		n = atoi(nstr);
+
+		//下面找出当前操作文件
+		//在UOF表中寻找最后打开的文件
+		for (i_uof = S - 1; i_uof >= 0; i_uof--) {
+			if (uof[i_uof].state != 0) {
+				break;
+			}
+		}
+		if (i_uof < 0) {
+			cout << "没有打开任何文件，当前没有可操作的文件。" << endl;
+			return -2;
+		}
+		else {
+			if (uof[i_uof].fsize == 0)		//空文件
+			{
+				cout << "\n" << temppath << "是空文件，不能进行此操作。\n";
+				return -3;
+			}
+			if (n <= 0 || n > uof[i_uof].fsize + 1)
+			{
+				cout << "\n位置参数错误。该参数必须在1和" << uof[i_uof].fsize + 1 << "之间。\n";
+				return -4;
+			}
+			uof[i_uof].readp = n;				//读指针设定为n
+			uof[i_uof].writep = n;			//写指针设定为n
+			return 1;						//修改成功，返回
+		}
+
 	}
-	if (uof[i_uof].fsize==0)		//空文件
-	{
-		cout<<"\n"<<temppath<<"是空文件，不能进行此操作。\n";
-		return -3;
+	else if (k == 2) {	//fseek <文件名> |p<n>——将指定文件的读、写指针移到文件第n字节处。
+		//这里老师所给的功能完整程序中没有进行判断
+		if (comd[2][0] != '|' || comd[2][1] != 'p') {
+			cout << "指令格式错误" << endl;
+			return -2;
+		}
+		//取出n
+		nstr = &comd[2][2];
+		//cout << nstr << endl;
+		n = atoi(nstr);
+		FindPath(comd[1], attrib, 0, fcbp);		//构成全路径且去掉“..”存于temppath中
+		i_uof = Check_UOF(temppath);		//查UOF
+		if (i_uof == S)
+		{
+			cout << "\n文件" << temppath << "未打开或不存在，不能操作。\n";
+			return -2;					//操作失败返回
+		}
+		if (uof[i_uof].fsize == 0)		//空文件
+		{
+			cout << "\n" << temppath << "是空文件，不能进行此操作。\n";
+			return -3;
+		}
+		if (n <= 0 || n > uof[i_uof].fsize + 1)
+		{
+			cout << "\n位置参数错误。该参数必须在1和" << uof[i_uof].fsize + 1 << "之间。\n";
+			return -4;
+		}
+		uof[i_uof].readp = n;				//读指针设定为n
+		uof[i_uof].writep = n;			//写指针设定为n
+		return 1;						//修改成功，返回
 	}
-	if (n<=0 || n>uof[i_uof].fsize+1)
-	{
-		cout<<"\n位置参数错误。该参数必须在1和"<<uof[i_uof].fsize+1<<"之间。\n";
-		return -4;
+	else {
+		cout << "\n命令中参数个数错误。\n";
+		return -1;
 	}
-	uof[i_uof].readp=n;				//读指针设定为n
-	uof[i_uof].writep=n;			//写指针设定为n
-	return 1;						//修改成功，返回
+
+	//cout << comd[1] << " " << comd[2] << endl;
+	//cout << comd[2][0] << " " << comd[2][1] << endl;
+
 }
 
 /////////////////////////////////////////////////////////////////
@@ -2355,31 +3133,54 @@ int AttribComd(int k)	//attrib命令的处理函数：修改文件或目录属性
 
 int RewindComd(int k)	//rewind命令的处理函数：读、写指针移到文件开头 
 {
-	// 命令形式：rewind <文件名>
-	// 对指定文件操作，同时该文件变为当前操作文件
+	// 命令形式：rewind [<文件名>]
+	// rewind <文件名>将当前目录中文件的读、写指针移到文件开头。若文件boy不存在或者文件boy尚未打开，则报错。
+	// rewind	将“当前操作文件”的读、写指针移到文件开头。
 
 	int i_uof;
-	char attrib='\0';
+	char attrib = '\0';
 	FCB* fcbp;
 
-	if (k!=1)
-	{
-		cout<<"\n命令参数个数错误。本命令只能有1个参数。\n";
+	if (k < 1) {
+		//在UOF表中寻找最后打开的文件
+		for (i_uof = S - 1; i_uof >= 0; i_uof--) {
+			if (uof[i_uof].state != 0) {
+				break;
+			}
+		}
+		if (i_uof < 0) {
+			cout << "没有打开任何文件，当前没有可操作的文件。" << endl;
+			return -1;
+		}
+		else {
+			if (uof[i_uof].faddr > 0)			//若是空文件
+				uof[i_uof].readp = 1;			//读指针设定为0
+			else
+				uof[i_uof].readp = 0;			//非空文件的读指针设定为1
+			uof[i_uof].writep = 1;			//文件的写指针设定为1
+			return 1;						// 修改成功，返回
+		}
+	}
+	else if (k == 1) {
+		FindPath(comd[1], attrib, 0, fcbp);		//构成全路径且去掉“..”存于temppath中
+		i_uof = Check_UOF(temppath);		//查UOF
+		if (i_uof == S)
+		{
+			cout << "\n文件" << temppath << "未打开或不存在，不能操作。\n";
+			return -1;					//操作失败返回
+		}
+		if (uof[i_uof].faddr > 0)			//若是空文件
+			uof[i_uof].readp = 1;			//读指针设定为0
+		else
+			uof[i_uof].readp = 0;			//非空文件的读指针设定为1
+		uof[i_uof].writep = 1;			//文件的写指针设定为1
+		return 1;						// 修改成功，返回
+	}
+	else {
+		cout << "命令参数个数错误。本命令最多只能有1个参数。" << endl;
 		return -1;
 	}
-	FindPath(comd[1],attrib,0,fcbp);		//构成全路径且去掉“..”存于temppath中
-	i_uof=Check_UOF(temppath);		//查UOF
-	if (i_uof==S)
-	{
-		cout<<"\n文件"<<temppath<<"未打开或不存在，不能操作。\n";
-		return -1;					//操作失败返回
-	}
-	if (uof[i_uof].faddr>0)			//若是空文件
-		uof[i_uof].readp=1;			//读指针设定为0
-	else
-		uof[i_uof].readp=0;			//非空文件的读指针设定为1
-	uof[i_uof].writep=1;			//文件的写指针设定为1
-	return 1;						// 修改成功，返回
+
 }
 
 /////////////////////////////////////////////////////////////////
@@ -3105,6 +3906,319 @@ int BatchComd(int k) {
 		}
 	}
 	return 1;
+}
+
+/////////////////////////////////////////////////////////////////
+
+int FcComd(int k)			//fc命令
+{
+	//命令形式：fc <文件名1> <文件名2>
+	//命令功能：逐个字节比较指定的两个文件，若相同，显示“文件内容相同”字样；
+	//若不同，显示第一个不同字节的位置和各自的内容。若文件不存在则报错。
+	if (k != 2)
+	{
+		cout << "\n命令参数个数错误！\n";
+		return -1;
+	}
+
+	short i, s1, s2;
+	char attrib = '\0', *FileName1, *FileName2;
+	char gFileName1[PATH_LEN], gFileName2[PATH_LEN];	//存放文件全路径名
+	FCB* fcbp1;
+	FCB* fcbp2;
+
+	s1 = ProcessPath(comd[1], FileName1, k, 2, '\20');//取FileName所在目录的首块号
+	if (s1 < 1)			//路径错误
+		return s1;		//失败，返回
+	s2 = ProcessPath(comd[2], FileName2, k, 2, '\20');
+	if (s2 < 1)			//路径错误
+		return s2;		//失败，返回
+
+	s1 = FindFCB(FileName1, s1, attrib, fcbp1);		//取FileName的首块号(查其存在性)
+	strcpy(gFileName1, temppath);
+	i = strlen(temppath);
+	if (temppath[i - 1] != '/')
+		strcat(gFileName1, "/");
+	strcat(gFileName1, FileName1);//构造文件1的全路径名
+	if (s1 < 0)
+	{
+		cout << "\n文件C:" << gFileName1 << "不存在。\n";
+		return -2;
+	}
+
+	attrib = '\0';
+
+	s2 = FindFCB(FileName2, s2, attrib, fcbp2);		//取FileName的首块号(查其存在性)
+	strcpy(gFileName2, temppath);
+	i = strlen(temppath);
+	if (temppath[i - 1] != '/')
+		strcat(gFileName2, "/");
+	strcat(gFileName2, FileName2);	//构造文件2的全路径名
+	if (s2 < 0)
+	{
+		cout << "\n文件C:" << gFileName2 << "不存在。\n";
+		return -2;
+	}
+
+	//下面将两个文件进行比较，并输出结果
+	char *buf1 = new char[fcbp1->Fsize];
+	char *buf2 = new char[fcbp2->Fsize];
+	short index, len1, len2;
+	bool flag = true;	//两文件若存在一处不同,置flag=false
+	len1 = file_to_buffer(fcbp1, buf1);
+	len2 = file_to_buffer(fcbp2, buf2);
+	if (fcbp1 == fcbp2) {
+		cout << "错误：文件C:" << gFileName1 << "自己跟自己比较。" << endl;
+	}
+	else if (len1 != len2) {
+		cout << "\n文件C:" << gFileName1 << "与文件C:" << gFileName2 << "的长度不同。" << endl;
+		cout << "文件C:" << gFileName1 << "的长度为：" << len1 << endl;
+		cout << "文件C:" << gFileName2 << "的长度为：" << len2 << endl;
+		for (index = 0; index < min(len1, len2); index++) {
+			if (buf1[index] != buf2[index]) {
+				cout << "\n文件C:" << gFileName1 << "与文件C:" << gFileName2 << "在" << index + 1 << "字节处不同：" << buf1[index] << "," << buf2[index] << endl;
+				break;
+			}
+		}
+	}
+	else {
+		for (index = 0; index < len1; index++) {
+			if (buf1[index] != buf2[index]) {
+				flag = false;
+				break;
+			}
+		}
+		if (flag) {
+			cout << "\n文件C:" << gFileName1 << "与文件C:" << gFileName2 << "相同" << endl;
+		}
+		else {
+			cout << "\n文件C:" << gFileName1 << "与文件C:" << gFileName2 << "在" << index + 1 << "字节处不同：" << buf1[index] << "," << buf2[index] << endl;
+		}
+	}
+	delete[]buf1;
+	delete[]buf2;
+}
+/////////////////////////////////////////////////////////////////
+
+int ReplaceComd(int k) {
+	//命令形式：replace <文件名> <目录名>
+	//命令功能：以“文件名”指定的文件，取代“目录名”指定目录中的同名文件。
+	//请按以下要求设计replace命令的函数：
+		//若指定文件或被取代文件不存在，则报错；
+		//若被取代的是只读属性的文件时，应询问用户；
+		//具有隐藏和系统属性的文件不能被取代；
+		//若目录名参数缺省，则取代当前目录的同名文件；
+		//文件名指定的文件和被取代的文件不应该是同一个文件，即不能自己取代自己。
+
+	short i, s1, s2; //s2目标文件目录项地址
+	short size, bnum, b, b0;
+	char attrib = '\0', *FileName1, *FileName2;
+	char gFileName1[PATH_LEN], gFileName2[PATH_LEN];	//存放文件全路径名
+	FCB* fcbp1;
+	FCB* fcbp2;
+	if (k < 1) {
+		cout << "文件不存在。" << endl;
+		return -2;
+	}
+	if (k == 1) { //目录名参数缺省  取代当前目录的同名文件 
+		s1 = ProcessPath(comd[1], FileName1, k, 1, '\20');
+		if (s1 < 1)			//路径错误
+			return s1;		//失败，返回
+		s1 = FindFCB(FileName1, s1, attrib, fcbp1);		//取FileName的首块号(查其存在性)
+		strcpy(gFileName1, temppath);
+		//cout <<"首块号:"<<s1<<"		路径名(不包含文件名)"<< gFileName1 <<"	"<<temppath<< endl;
+		//cout <<"当前路径："<< curpath.cpath <<"当前路径首块号" <<curpath.fblock<< endl;
+		//下面构造的是文件1的全路径名  usr/user/oo
+		i = strlen(temppath);
+		if (temppath[i - 1] != '/')
+			strcat(gFileName1, "/");
+		strcat(gFileName1, FileName1);//构造文件1的全路径名
+		if (s1 < 0)
+		{
+			cout << "\n文件" << FileName1 << "不存在。\n";
+			return -2;
+		}
+
+		//在当前目录下寻找与FileName1同名的文件进行替换，且该文件满足以下几个条件：
+		//a、该同名文件必须存在
+		//b、不能自己取代自己
+		//c、该同名文件不能处在一个正在打开的状态
+		//d、具有隐藏和系统属性的文件不能被取代
+		//e、若被取代的文件是只读属性的文件时，应询问用户
+
+		//寻找当前目录curpath中与FileName1同名的文件
+		s2 = FindFCB(FileName1, curpath.fblock, attrib, fcbp2);
+		strcpy(gFileName2, curpath.cpath);
+		i = strlen(curpath.cpath);
+		if (curpath.cpath[i - 1] != '/')
+			strcat(gFileName2, "/");
+		strcat(gFileName2, FileName1);	//构造目标文件的全路径名
+
+		if (s2 < 0) {
+			cout << "目录中没有可取代的同名文件。" << endl;
+			return -2;
+		}
+		else {
+			//不能自己取代自己
+			if (strcmp(gFileName2, gFileName1) == 0) {
+				cout << "文件不能自己取代自己。" << endl;
+				return -2;
+			}
+			//判断该文件是否处在一个正在打开的状态
+			i = Check_UOF(gFileName2);		//查UOF
+			if (i < S)					//该文件已在UOF中
+			{
+				cout << "\n文件" << gFileName2 << "正在使用，不能被取代。\n";
+				return -2;
+			}
+
+
+			//具有隐藏和系统属性的文件不能被取代 
+			int Fattributes = fcbp2->Fattrib;
+			if ((Fattributes >> 1) & 1 || (Fattributes >> 2) & 1) {
+				cout << "隐含和系统属性的文件不能被取代。" << endl;
+				return -2;
+			}
+			//若被取代的文件是只读属性的文件时，应询问用户
+			char yn;
+			if (Fattributes & 1) {
+				cout << "文件" << gFileName2 << "是只读属性文件，是否仍要取代它？(y/n)" << endl;
+				cin >> yn;
+				if (yn == 'N' || yn == 'n') {
+					return -2;				//不取代返回
+				}
+			}
+
+			//下面开始进行文件的取代即文件的copy
+			size = fcbp1->Fsize;		//源文件的长度
+			bnum = size / SIZE + (short)(size % SIZE > 0);	//计算源文件所占盘块数
+			if (FAT[0] < bnum)
+			{
+				cout << "\n磁盘空间已满，不能复制文件。\n";
+				return -6;
+			}
+			*fcbp2 = *fcbp1;						//源文件的目录项复制给目标文件
+			//strcpy(fcbp2->FileName, FileName2);	//写目标文件名
+			b0 = 0;
+			while (s1 > 0)		//开始复制文件内容
+			{
+				b = getblock();
+				if (b0 == 0)
+					fcbp2->Addr = b;		//目标文件的首块号
+				else
+					FAT[b0] = b;
+				memcpy(Disk[b], Disk[s1], SIZE);	//复制盘块
+				s1 = FAT[s1];				//准备复制下一个盘块
+				b0 = b;
+			}
+			//文件复制成功，返回
+		}
+	}
+	else if (k == 2) { //replace <文件名> <目录名>
+		s1 = ProcessPath(comd[1], FileName1, k, 2, '\20');//取FileName所在目录的首块号
+		if (s1 < 1)			//路径错误
+			return s1;		//失败，返回
+		/*
+		s2 = ProcessPath(comd[2], FileName2, k, 2, '\20');
+		if (s2 < 1)			//路径错误
+			return s2;		//失败，返回
+		*/
+		s1 = FindFCB(FileName1, s1, attrib, fcbp1);		//取FileName的首块号(查其存在性)
+		strcpy(gFileName1, temppath);
+		i = strlen(temppath);
+		if (temppath[i - 1] != '/')
+			strcat(gFileName1, "/");
+		strcat(gFileName1, FileName1);//构造文件1的全路径名
+		if (s1 < 0)
+		{
+			cout << "\n文件" << FileName1 << "不存在。\n";
+			return -2;
+		}
+		attrib = '\040';
+		s2 = FindPath(comd[2], attrib, 1, fcbp2);	//查找目标路径的首块号
+		if (s2 < 0) {//不存在当前目标路径则返回
+			cout << "目标路径错误。" << endl;
+			return -2;
+		}
+		s2 = FindFCB(FileName1, s2, attrib, fcbp2);		//寻找<目录名>中与FileName1同名的文件
+		strcpy(gFileName2, temppath);
+		/*
+		i = strlen(temppath);
+		if (temppath[i - 1] != '/')
+			strcat(gFileName2, "/");
+		strcat(gFileName2, FileName1);	//构造目标文件的全路径名
+		*/
+		if (s2 < 0)
+		{
+			cout << "目录" << gFileName2 << "中没有可取代的同名文件。";		//这里的temppath仅仅是一个目录
+			return -2;
+		}
+		else {
+
+			i = strlen(temppath);
+			if (temppath[i - 1] != '/')
+				strcat(gFileName2, "/");
+			strcat(gFileName2, FileName1);	//构造目标文件的全路径名
+
+			//不能自己取代自己
+			if (strcmp(gFileName2, gFileName1) == 0) {
+				cout << "文件不能自己取代自己。" << endl;
+				return -2;
+			}
+			//判断该文件是否处在一个正在打开的状态
+			i = Check_UOF(gFileName2);		//查UOF
+			if (i < S)					//该文件已在UOF中
+			{
+				cout << "\n文件" << gFileName2 << "正在使用，不能被取代。\n";
+				return -2;
+			}
+
+
+			//具有隐藏和系统属性的文件不能被取代 
+			int Fattributes = fcbp2->Fattrib;
+			if ((Fattributes >> 1) & 1 || (Fattributes >> 2) & 1) {
+				cout << "隐含和系统属性的文件不能被取代。" << endl;
+				return -2;
+			}
+			//若被取代的文件是只读属性的文件时，应询问用户
+			char yn;
+			if (Fattributes & 1) {
+				cout << "文件" << gFileName2 << "是只读属性文件，是否仍要取代它？(y/n)" << endl;
+				cin >> yn;
+				if (yn == 'N' || yn == 'n') {
+					return -2;				//不取代返回
+				}
+			}
+
+			//下面开始进行文件的取代即文件的copy
+			size = fcbp1->Fsize;		//源文件的长度
+			bnum = size / SIZE + (short)(size % SIZE > 0);	//计算源文件所占盘块数
+			if (FAT[0] < bnum)
+			{
+				cout << "\n磁盘空间已满，不能复制文件。\n";
+				return -6;
+			}
+			*fcbp2 = *fcbp1;						//源文件的目录项复制给目标文件
+			//strcpy(fcbp2->FileName, FileName2);	//写目标文件名
+			b0 = 0;
+			while (s1 > 0)		//开始复制文件内容
+			{
+				b = getblock();
+				if (b0 == 0)
+					fcbp2->Addr = b;		//目标文件的首块号
+				else
+					FAT[b0] = b;
+				memcpy(Disk[b], Disk[s1], SIZE);	//复制盘块
+				s1 = FAT[s1];				//准备复制下一个盘块
+				b0 = b;
+			}
+			//文件复制成功，返回
+		}
+	}
+	else {
+		cout << "命令中参数太多。" << endl;
+		return -2;
+	}
 }
 
 /////////////////////////////////////////////////////////////////
