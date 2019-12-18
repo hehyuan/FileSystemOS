@@ -1063,6 +1063,7 @@ int TypeComd(int k)		//type命令处理函数(显示文件内容)
 		}
 		if (i_uof < 0) {
 			cout << "\n无当前操作文件可显示。" << endl;
+			return -1;
 		}
 		else {
 			s = uof[i_uof].faddr;
@@ -1102,8 +1103,10 @@ int TypeComd(int k)		//type命令处理函数(显示文件内容)
 			cout << "\n文件" << gFileName << "不存在。\n";
 			return -3;
 		}
-		if (s == 0)
+		if (s == 0) {
 			cout << "\n文件" << gFileName << "是空文件\n";
+			return -1;
+		}
 		else
 		{
 			size = fcbp->Fsize;
