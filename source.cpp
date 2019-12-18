@@ -1,5 +1,5 @@
 ﻿////////////////////////////////////////////////////////////////////////////
-//  
+//
 //  本程序的文件名：OS实验参考程序2010.CPP
 //
 ////////////////////////////////////////////////////////////////////////////
@@ -45,58 +45,57 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include <iostream>	//cout,cin
-#include <iomanip>	//setw(),setiosflags()
-#include <stdlib.h>		//exit(),atoi()
-#include <string.h>		//strcpy(),_stricmp()
-#include <fstream>	//文件操作用
+#include <iostream> //cout,cin
+#include <iomanip>  //setw(),setiosflags()
+#include <stdlib.h> //exit(),atoi()
+#include <string.h> //strcpy(),_stricmp()
+#include <fstream>  //文件操作用
 using namespace std;
 
 //定义若干符号常量
-#define S 32			//假设最多同时打开32个文件 
+#define S 32			//假设最多同时打开32个文件
 #define K 5000			//假设磁盘共有5000个盘块
 #define SIZE 64			//假设磁盘的大小是64字节
 #define CK 8			//命令分解后的段数
-#define INPUT_LEN 128	//输入缓冲区长度
-#define COMMAND_LEN 11	//命令字符串长度
-#define FILENAME_LEN 11	//文件名长度
-#define PATH_LEN INPUT_LEN-COMMAND_LEN
-#define DM 40			//恢复被删除文件表的表项数
+#define INPUT_LEN 128   //输入缓冲区长度
+#define COMMAND_LEN 11  //命令字符串长度
+#define FILENAME_LEN 11 //文件名长度
+#define PATH_LEN INPUT_LEN - COMMAND_LEN
+#define DM 40 //恢复被删除文件表的表项数
 
-
-struct FCB			//定义文件目录项FCB的结构(共16个字节)
+struct FCB //定义文件目录项FCB的结构(共16个字节)
 {
-	char FileName[FILENAME_LEN];//文件名(1～10字节)
-	char Fattrib;				//文件属性
-	short int Addr;				//文件首块号
-	short int Fsize;			//文件长度
+	char FileName[FILENAME_LEN]; //文件名(1～10字节)
+	char Fattrib;				 //文件属性
+	short int Addr;				 //文件首块号
+	short int Fsize;			 //文件长度
 };
 
-struct UOF			//定义用户打开文件表的结构
+struct UOF //定义用户打开文件表的结构
 {
-	char fname[PATH_LEN];		//文件全路径名
-	char attr;					//文件属性，1=只可读；0=可读写
-	short int faddr;			//文件的首块号
-	short int fsize;			//文件大小(字节数)
-	FCB* fp;					//该文件的目录项指针
-	short int state;			//状态：0=空表项；1=新建；2=打开
-	short int readp;			//读指针，指向某个要读的字符位置，0=空文件
-	short int writep;			//写读指针，指向某个要写读的字符位置
+	char fname[PATH_LEN]; //文件全路径名
+	char attr;			  //文件属性，1=只可读；0=可读写
+	short int faddr;	  //文件的首块号
+	short int fsize;	  //文件大小(字节数)
+	FCB* fp;			  //该文件的目录项指针
+	short int state;	  //状态：0=空表项；1=新建；2=打开
+	short int readp;	  //读指针，指向某个要读的字符位置，0=空文件
+	short int writep;	 //写读指针，指向某个要写读的字符位置
 };
 
-struct CurPath		//定义存储当前目录的数据结构
+struct CurPath //定义存储当前目录的数据结构
 {
-	short int fblock;			//当前目录的首块号
-	char cpath[PATH_LEN];		//当前目录绝对路径字符串(全路径名)
+	short int fblock;	 //当前目录的首块号
+	char cpath[PATH_LEN]; //当前目录绝对路径字符串(全路径名)
 };
 
-struct UnDel		//恢复被删除文件表的数据结构
+struct UnDel //恢复被删除文件表的数据结构
 {
-	char gpath[PATH_LEN];		//被删除文件的全路径名(不含文件名)
-	char ufname[FILENAME_LEN];	//被删除文件名
-	short ufaddr;				//被删除文件名的首块号
-	short fb;					//存储被删除文件块号的第一个块号(链表头指针)
-								//首块号也存于fb所指的盘块中
+	char gpath[PATH_LEN];	  //被删除文件的全路径名(不含文件名)
+	char ufname[FILENAME_LEN]; //被删除文件名
+	short ufaddr;			   //被删除文件名的首块号
+	short fb;				   //存储被删除文件块号的第一个块号(链表头指针)
+							   //首块号也存于fb所指的盘块中
 };
 
 //关于恢复被删除文件问题，还可以采用类似于Windows的回收站的方法。例如可以在根目录中
@@ -111,129 +110,129 @@ struct UnDel		//恢复被删除文件表的数据结构
 //到回收站，文件占用的磁盘空间并不释放；恢复时工作相反。清空回收站时才释放磁盘空间。
 //此方案比前述UnDel结构的方案耗费更多的磁盘空间(删除的文件仍占用磁盘空间)
 
-int FAT[K];						//FAT表,盘块数为K
+int FAT[K]; //FAT表,盘块数为K
 //char (*Disk)[SIZE]=new char [K][SIZE];//定义磁盘空间，每个盘块容量为SIZE个字节
 char Disk[K][SIZE];
-UOF uof[S];						//用户打开文件表UOF,最多同时打开S个文件 
-char comd[CK][PATH_LEN];		//分析命令时使用
-char temppath[PATH_LEN];		//临时路径(全路径)
+UOF uof[S];				 //用户打开文件表UOF,最多同时打开S个文件
+char comd[CK][PATH_LEN]; //分析命令时使用
+char temppath[PATH_LEN]; //临时路径(全路径)
 CurPath curpath;
-UnDel udtab[DM];				//定义删除文件恢复表，退出系统时该表可存于文件UdTab.dat中
-short Udelp = 0;					//udtab表的第一个空表项的下标，系统初始化时它为0。
-								//当Udelp=DM时，表示表已满，需清除最早的表项(后续表项依次前移)
+UnDel udtab[DM]; //定义删除文件恢复表，退出系统时该表可存于文件UdTab.dat中
+short Udelp = 0; //udtab表的第一个空表项的下标，系统初始化时它为0。
+				 //当Udelp=DM时，表示表已满，需清除最早的表项(后续表项依次前移)
 short ffbp = 1;
 //0号盘快中存储如下内容：
 //	short ffbp;		//从该位置开始查找空闲盘快(类似循环首次适应分配)
 //	short Udelp;	//udtab表的第一个空表项的下标
 
-int dspath = 1;		//dspath=1,提示符中显示当前目录
+int dspath = 1; //dspath=1,提示符中显示当前目录
 
 //函数原型说明
 
 //create命令处理函数
-int CreateComd(int);			
+int CreateComd(int);
 //open命令处理函数
-int OpenComd(int);		
+int OpenComd(int);
 //read命令处理函数
-int ReadComd(int);				
+int ReadComd(int);
 //write命令处理函数
-int WriteComd(int);				
+int WriteComd(int);
 //close命令处理函数
-int CloseComd(int);				
+int CloseComd(int);
 //closeaal命令处理函数, 关闭当前用户所有打开的文件
-void CloseallComd(int);		
+void CloseallComd(int);
 //del命令处理函数
-int DelComd(int);			
+int DelComd(int);
 //undel命令处理函数，恢复被删除文件
-int UndelComd(int);	
-	//copy命令处理函数
-int CopyComd(int);		
+int UndelComd(int);
+//copy命令处理函数
+int CopyComd(int);
 //dir命令处理函数，显示指定的文件目录——频繁使用
-int DirComd(int);				
+int DirComd(int);
 //cd命令处理函数
-int CdComd(int);				
+int CdComd(int);
 //md命令处理函数
-int MdComd(int);				
+int MdComd(int);
 //rd命令处理函数
-int RdComd(int);				
+int RdComd(int);
 //type命令处理函数
-int TypeComd(int);				
+int TypeComd(int);
 //ren命令处理函数
-int RenComd(int);				
+int RenComd(int);
 //attrib命令处理函数
-int AttribComd(int);			
+int AttribComd(int);
 //uof命令处理函数
-void UofComd(void);				
+void UofComd(void);
 //help命令处理函数
-void HelpComd(void);			
+void HelpComd(void);
 //找指定目录(的首块号)
-int FindPath(char*, char, int, FCB*&);	
+int FindPath(char*, char, int, FCB*&);
 //找指定的文件或目录
-int FindFCB(char*, int, char, FCB*&);		
+int FindFCB(char*, int, char, FCB*&);
 //寻找首块号为s的目录中的空目录项
-int FindBlankFCB(short s, FCB*& fcbp1);	
+int FindBlankFCB(short s, FCB*& fcbp1);
 //rewind命令处理函数, 读、写指针移到文件开头(第一个字节处)
-int RewindComd(int);			
+int RewindComd(int);
 //fseek命令处理函数, 读、写指针移到文件第n个字节处
-int FseekComd(int);				
+int FseekComd(int);
 //block命令处理函数(显示文件占用的盘块号)
-int blockf(int);				
+int blockf(int);
 //delall命令处理函数, 删除指定目录中的所有文件
-int delall(int);				
+int delall(int);
 void save_FAT(void);
 void save_Disk(void);
 //获得一个盘块
-int getblock(void);				
+int getblock(void);
 void FatComd(void);
 void CheckComd(void);
 int Check_UOF(char*);
 void ExitComd(void);
 //判断名字是否符合规则
-bool IsName(char*);				
+bool IsName(char*);
 //prompt命令，提示符是否显示当前目录的切换
-void PromptComd(void);			
+void PromptComd(void);
 //udtab命令，显示udtab表内容
-void UdTabComd(void);			
+void UdTabComd(void);
 //释放s开始的盘块链
-void releaseblock(short s);		
+void releaseblock(short s);
 //Buffer写入文件
-int buffer_to_file(FCB* fcbp, char* Buffer);	
+int buffer_to_file(FCB* fcbp, char* Buffer);
 //文件内容读到Buffer,返回文件长度
-int file_to_buffer(FCB* fcbp, char* Buffer);	
+int file_to_buffer(FCB* fcbp, char* Buffer);
 //将输入的命令行分解成命令和参数等
-int ParseCommand(char*);		
+int ParseCommand(char*);
 //执行命令
-void ExecComd(int);				
+void ExecComd(int);
 
-#define INIT	//决定初始化还是从磁盘读入
+#define INIT //决定初始化还是从磁盘读入
 
 void main()
 {
 
-	char cmd[INPUT_LEN];			//命令行缓冲区
+	char cmd[INPUT_LEN]; //命令行缓冲区
 	int i, k;
 	// 进入系统时，当前目录是根目录
-	curpath.fblock = 1;				//当前目录(根目录)的首块号
-	strcpy(curpath.cpath, "/");		//根目录的路径字符串
+	curpath.fblock = 1;			//当前目录(根目录)的首块号
+	strcpy(curpath.cpath, "/"); //根目录的路径字符串
 
 #ifdef INIT
 
 	int j;
 	FCB* fcbp;
 	// *********** 初始化FAT和Disk ************
-	for (i = 0; i < K; i++)	//开始时所有盘块空闲
-		FAT[i] = 0;		//空闲盘块标记
-	FAT[0] = K - 1;			//FAT[0]中保存空闲盘块数
-	for (i = 1; i < 30; i++)	//构造根目录盘块链
+	for (i = 0; i < K; i++)  //开始时所有盘块空闲
+		FAT[i] = 0;			 //空闲盘块标记
+	FAT[0] = K - 1;			 //FAT[0]中保存空闲盘块数
+	for (i = 1; i < 30; i++) //构造根目录盘块链
 	{
-		FAT[i] = i + 1;		//初始化根目录的FAT表
+		FAT[i] = i + 1; //初始化根目录的FAT表
 		FAT[0]--;		//空盘块数减1
 	}
-	FAT[i] = -1;			//根目录尾标记
-	FAT[0]--;			//空盘块数减1
+	FAT[i] = -1; //根目录尾标记
+	FAT[0]--;	//空盘块数减1
 	for (i++; i < 40; i++)
 	{
-		FAT[i] = -1;		//各子目录尾标记
+		FAT[i] = -1; //各子目录尾标记
 		FAT[0]--;
 	}
 	// *********** 初始化Disk ************
@@ -241,123 +240,126 @@ void main()
 	j = 40 * SIZE / sizeof(FCB);
 	for (i = 1; i <= j; i++)
 	{
-		fcbp->FileName[0] = '\0';	//初始目录树各目录中初始化为空目录项
+		fcbp->FileName[0] = '\0'; //初始目录树各目录中初始化为空目录项
 		fcbp++;
 	}
 	//以下建立初始目录树中各个子目录
+	/////////////////////////////////////////第一块磁盘
 	fcbp = (FCB*)Disk[1];
-	strcpy(fcbp->FileName, "bin");	//子目录bin
-	fcbp->Fattrib = 16;				//表示是子目录
-	fcbp->Addr = 31;					//该子目录的首盘块号是31
-	fcbp->Fsize = 0;					//约定子目录的长度为0
-	fcbp++;							//指向下一个目录项
-	strcpy(fcbp->FileName, "usr");	//子目录usr
-	fcbp->Fattrib = 16;				//表示是子目录
-	fcbp->Addr = 32;					//该子目录的首盘块号是32
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	strcpy(fcbp->FileName, "bin"); //子目录bin
+	fcbp->Fattrib = 16;			   //表示是子目录
+	fcbp->Addr = 31;			   //该子目录的首盘块号是31
+	fcbp->Fsize = 0;			   //约定子目录的长度为0
+	fcbp++;						   //指向下一个目录项
+	strcpy(fcbp->FileName, "usr"); //子目录usr
+	fcbp->Fattrib = 16;			   //表示是子目录
+	fcbp->Addr = 32;			   //该子目录的首盘块号是32
+	fcbp->Fsize = 0;			   //约定子目录的长度为0
 	fcbp++;
-	strcpy(fcbp->FileName, "auto");	//文件unix的目录项
+	strcpy(fcbp->FileName, "auto"); //文件unix的目录项
 	fcbp->Fattrib = 0;				//表示是普通文件
 	fcbp->Addr = 0;					//该子目录的首盘块号是0，表示是空文件
-	fcbp->Fsize = 0;					//该文件的长度为0
+	fcbp->Fsize = 0;				//该文件的长度为0
 	fcbp++;
-	strcpy(fcbp->FileName, "dev");	//子目录etc
-	fcbp->Fattrib = 16;				//表示是子目录
-	fcbp->Addr = 33;					//该子目录的首盘块号是33
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	strcpy(fcbp->FileName, "dev"); //子目录etc
+	fcbp->Fattrib = 16;			   //表示是子目录
+	fcbp->Addr = 33;			   //该子目录的首盘块号是33
+	fcbp->Fsize = 0;			   //约定子目录的长度为0
+
+	/////////////////////////////////////////////30号之后的磁盘
 	fcbp = (FCB*)Disk[31];
-	strcpy(fcbp->FileName, "..");	//bin的父目录对应的目录项
-	fcbp->Fattrib = 16;				//表示是目录而不是文件
-	fcbp->Addr = 1;					//父目录(此处是根目录)的首盘块号是1
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	strcpy(fcbp->FileName, ".."); //bin的父目录对应的目录项
+	fcbp->Fattrib = 16;			  //表示是目录而不是文件
+	fcbp->Addr = 1;				  //父目录(此处是根目录)的首盘块号是1
+	fcbp->Fsize = 0;			  //约定子目录的长度为0
 	fcbp = (FCB*)Disk[32];
-	strcpy(fcbp->FileName, "..");	//usr的父目录对应的目录项
-	fcbp->Fattrib = 16;				//表示是目录而不是文件
-	fcbp->Addr = 1;					//父目录(此处是根目录)的首盘块号是1
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	strcpy(fcbp->FileName, ".."); //usr的父目录对应的目录项
+	fcbp->Fattrib = 16;			  //表示是目录而不是文件
+	fcbp->Addr = 1;				  //父目录(此处是根目录)的首盘块号是1
+	fcbp->Fsize = 0;			  //约定子目录的长度为0
 	fcbp++;
-	strcpy(fcbp->FileName, "user");	//子目录lib
+	strcpy(fcbp->FileName, "user"); //子目录lib
 	fcbp->Fattrib = 16;				//表示是子目录
-	fcbp->Addr = 34;					//该子目录的首盘块号是34
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	fcbp->Addr = 34;				//该子目录的首盘块号是34
+	fcbp->Fsize = 0;				//约定子目录的长度为0
 	fcbp++;
-	strcpy(fcbp->FileName, "lib");	//子目录user
-	fcbp->Fattrib = 16;				//表示是子目录
-	fcbp->Addr = 35;					//该子目录的首盘块号是35
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	strcpy(fcbp->FileName, "lib"); //子目录user
+	fcbp->Fattrib = 16;			   //表示是子目录
+	fcbp->Addr = 35;			   //该子目录的首盘块号是35
+	fcbp->Fsize = 0;			   //约定子目录的长度为0
 	fcbp++;
-	strcpy(fcbp->FileName, "bin");	//子目录bin
-	fcbp->Fattrib = 16;				//表示是子目录
-	fcbp->Addr = 36;					//该子目录的首盘块号是36
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	strcpy(fcbp->FileName, "bin"); //子目录bin
+	fcbp->Fattrib = 16;			   //表示是子目录
+	fcbp->Addr = 36;			   //该子目录的首盘块号是36
+	fcbp->Fsize = 0;			   //约定子目录的长度为0
 	fcbp = (FCB*)Disk[33];
-	strcpy(fcbp->FileName, "..");	//etc的父目录对应的目录项
-	fcbp->Fattrib = 16;				//表示是目录而不是文件
-	fcbp->Addr = 1;					//父目录(此处是根目录)的首盘块号是1
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	strcpy(fcbp->FileName, ".."); //etc的父目录对应的目录项
+	fcbp->Fattrib = 16;			  //表示是目录而不是文件
+	fcbp->Addr = 1;				  //父目录(此处是根目录)的首盘块号是1
+	fcbp->Fsize = 0;			  //约定子目录的长度为0
 	fcbp = (FCB*)Disk[34];
-	strcpy(fcbp->FileName, "..");	//lib的父目录对应的目录项
-	fcbp->Fattrib = 16;				//表示是目录而不是文件
-	fcbp->Addr = 32;					//父目录(此处是usr目录)的首盘块号是32
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	strcpy(fcbp->FileName, ".."); //lib的父目录对应的目录项
+	fcbp->Fattrib = 16;			  //表示是目录而不是文件
+	fcbp->Addr = 32;			  //父目录(此处是usr目录)的首盘块号是32
+	fcbp->Fsize = 0;			  //约定子目录的长度为0
 	fcbp++;
-	strcpy(fcbp->FileName, "lin");	//子目录liu
-	fcbp->Fattrib = 16;				//表示是子目录
-	fcbp->Addr = 37;					//该子目录的首盘块号是37
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	strcpy(fcbp->FileName, "lin"); //子目录liu
+	fcbp->Fattrib = 16;			   //表示是子目录
+	fcbp->Addr = 37;			   //该子目录的首盘块号是37
+	fcbp->Fsize = 0;			   //约定子目录的长度为0
 	fcbp++;
-	strcpy(fcbp->FileName, "sun");	//子目录sun
-	fcbp->Fattrib = 16;				//表示是子目录
-	fcbp->Addr = 38;					//该子目录的首盘块号是38
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	strcpy(fcbp->FileName, "sun"); //子目录sun
+	fcbp->Fattrib = 16;			   //表示是子目录
+	fcbp->Addr = 38;			   //该子目录的首盘块号是38
+	fcbp->Fsize = 0;			   //约定子目录的长度为0
 	fcbp++;
-	strcpy(fcbp->FileName, "ma");	//子目录fti
-	fcbp->Fattrib = 16;				//表示是子目录
-	fcbp->Addr = 39;					//该子目录的首盘块号是39
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	strcpy(fcbp->FileName, "ma"); //子目录fti
+	fcbp->Fattrib = 16;			  //表示是子目录
+	fcbp->Addr = 39;			  //该子目录的首盘块号是39
+	fcbp->Fsize = 0;			  //约定子目录的长度为0
 	fcbp = (FCB*)Disk[35];
-	strcpy(fcbp->FileName, "..");	//user的父目录对应的目录项
-	fcbp->Fattrib = 16;				//表示是目录而不是文件
-	fcbp->Addr = 32;					//父目录(此处是usr目录)的首盘块号是32
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	strcpy(fcbp->FileName, ".."); //user的父目录对应的目录项
+	fcbp->Fattrib = 16;			  //表示是目录而不是文件
+	fcbp->Addr = 32;			  //父目录(此处是usr目录)的首盘块号是32
+	fcbp->Fsize = 0;			  //约定子目录的长度为0
 	fcbp = (FCB*)Disk[36];
-	strcpy(fcbp->FileName, "..");	//usr/bin的父目录对应的目录项
-	fcbp->Fattrib = 16;				//表示是目录而不是文件
-	fcbp->Addr = 32;					//父目录(此处是usr目录)的首盘块号是32
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	strcpy(fcbp->FileName, ".."); //usr/bin的父目录对应的目录项
+	fcbp->Fattrib = 16;			  //表示是目录而不是文件
+	fcbp->Addr = 32;			  //父目录(此处是usr目录)的首盘块号是32
+	fcbp->Fsize = 0;			  //约定子目录的长度为0
 	fcbp = (FCB*)Disk[37];
-	strcpy(fcbp->FileName, "..");	//usr/lib/liu的父目录对应的目录项
-	fcbp->Fattrib = 16;				//表示是目录而不是文件
-	fcbp->Addr = 34;					//父目录(此处是usr/lib目录)的首盘块号是34
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	strcpy(fcbp->FileName, ".."); //usr/lib/liu的父目录对应的目录项
+	fcbp->Fattrib = 16;			  //表示是目录而不是文件
+	fcbp->Addr = 34;			  //父目录(此处是usr/lib目录)的首盘块号是34
+	fcbp->Fsize = 0;			  //约定子目录的长度为0
 	fcbp = (FCB*)Disk[38];
-	strcpy(fcbp->FileName, "..");	//usr/lib/sun的父目录对应的目录项
-	fcbp->Fattrib = 16;				//表示是目录而不是文件
-	fcbp->Addr = 34;					//父目录(此处是usr/lib目录)的首盘块号是34
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	strcpy(fcbp->FileName, ".."); //usr/lib/sun的父目录对应的目录项
+	fcbp->Fattrib = 16;			  //表示是目录而不是文件
+	fcbp->Addr = 34;			  //父目录(此处是usr/lib目录)的首盘块号是34
+	fcbp->Fsize = 0;			  //约定子目录的长度为0
 	fcbp = (FCB*)Disk[39];
-	strcpy(fcbp->FileName, "..");	//usr/lib/fti的父目录对应的目录项
-	fcbp->Fattrib = 16;				//表示是目录而不是文件
-	fcbp->Addr = 34;					//父目录(此处是usr/lib目录)的首盘块号是34
-	fcbp->Fsize = 0;					//约定子目录的长度为0
+	strcpy(fcbp->FileName, ".."); //usr/lib/fti的父目录对应的目录项
+	fcbp->Fattrib = 16;			  //表示是目录而不是文件
+	fcbp->Addr = 34;			  //父目录(此处是usr/lib目录)的首盘块号是34
+	fcbp->Fsize = 0;			  //约定子目录的长度为0
 
 	// *********** 初始化UnDel表 ************
 	Udelp = 0;
 
-	ffbp = 1;			//从FAT表开头查找空闲盘快
+	ffbp = 1; //从FAT表开头查找空闲盘快
 
 #else
 
 	// 读入文件分配表FAT
 	char yn;
-	ifstream ffi("FAT.txt", ios::_Nocreate);//打开文件FAT.txt
+	ifstream ffi("FAT.txt", ios::_Nocreate); //打开文件FAT.txt
 	if (!ffi)
 	{
 		cout << "Can't open FAT.txt!\n";
 		cin >> yn;
 		exit(0);
 	}
-	for (i = 0; i < K; i++)		//从文件FAT.txt读入文件分配表FAT
+	for (i = 0; i < K; i++) //从文件FAT.txt读入文件分配表FAT
 		if (ffi)
 			ffi >> FAT[i];
 		else
@@ -372,7 +374,7 @@ void main()
 		cin >> yn;
 		exit(0);
 	}
-	for (i = 0; i < K; i++)		//从文件Disk.dat读入盘块内容
+	for (i = 0; i < K; i++) //从文件Disk.dat读入盘块内容
 		if (ffi)
 			ffi.read((char*)& Disk[i], SIZE);
 		else
@@ -387,7 +389,7 @@ void main()
 		cin >> yn;
 		exit(0);
 	}
-	for (i = 0; i < DM; i++)		//从文件Disk.dat读入盘块内容
+	for (i = 0; i < DM; i++) //从文件Disk.dat读入盘块内容
 		if (ffi)
 			ffi.read((char*)& udtab[i], sizeof(udtab[0]));
 		else
@@ -400,108 +402,135 @@ void main()
 
 #endif
 
-	for (i = 0; i < S; i++)		//初始化UOF。state：0＝空表项；1＝新建；2＝打开
-		uof[i].state = 0;		//初始化为空表项
+	for (i = 0; i < S; i++) //初始化UOF。state：0＝空表项；1＝新建；2＝打开
+		uof[i].state = 0;   //初始化为空表项
 
 	cout << "\n现在你可以输入各种操作命令.\n"
 		<< "Help —— 简易帮助信息.\n"
 		<< "exit —— 退出本程序.\n";
-	while (1)	//循环，等待用户输入命令，直到输入“exit”结束循环，程序结束
-	{			//输入命令，分析并执行命令
+	while (1) //循环，等待用户输入命令，直到输入“exit”结束循环，程序结束
+	{		  //输入命令，分析并执行命令
 
 		while (1)
 		{
-			cout << "\nC:";					//显示提示符(本系统总假定是C盘)
+			cout << "\nC:"; //显示提示符(本系统总假定是C盘)
 			if (dspath)
 				cout << curpath.cpath;
 			cout << ">";
-			cin.getline(cmd, INPUT_LEN);		//输入命令
+			cin.getline(cmd, INPUT_LEN); //输入命令
 			if (strlen(cmd) > 0)
 				break;
 		}
-		k = ParseCommand(cmd);		//分解命令及其参数
-									//comd[0]中是命令，comd[1],comd[2]...是参数		
-		ExecComd(k);				//执行命令
+		k = ParseCommand(cmd); //分解命令及其参数
+							   //comd[0]中是命令，comd[1],comd[2]...是参数
+		ExecComd(k);		   //执行命令
 	}
 }
 
 /////////////////////////////////////////////////////////////////
 
-void ExecComd(int k)		//执行命令
+void ExecComd(int k) //执行命令
 {
-	int cid;				//命令标识
+	int cid; //命令标识
 
-	//操作命令表 
-	char CmdTab[][COMMAND_LEN] = { "create","open","write","read","close",
-		"del","dir","cd","md","rd","ren","copy","type","help","attrib",
-		"uof","closeall","block","rewind","fseek","fat","check","exit",
-		"undel","Prompt","udtab" };
-	int M = sizeof(CmdTab) / COMMAND_LEN;	//统计命令个数
-	for (cid = 0; cid < M; cid++)			//在命令表中检索命令
-		if (_stricmp(CmdTab[cid], comd[0]) == 0)//命令不区分大小写
+	//操作命令表
+	char CmdTab[][COMMAND_LEN] = { "create", "open", "write", "read", "close",
+								  "del", "dir", "cd", "md", "rd", "ren", "copy", "type", "help", "attrib",
+								  "uof", "closeall", "block", "rewind", "fseek", "fat", "check", "exit",
+								  "undel", "Prompt", "udtab" };
+	int M = sizeof(CmdTab) / COMMAND_LEN;		 //统计命令个数
+	for (cid = 0; cid < M; cid++)				 //在命令表中检索命令
+		if (_stricmp(CmdTab[cid], comd[0]) == 0) //命令不区分大小写
 			break;
 	//以下命令函数中，命令参数通过全局变量comd[][]传递，故未出现在函数参数表中
 	switch (cid)
 	{
-	case 0:CreateComd(k);		//create命令，k为命令中的参数个数(命令本身除外),下同
+	case 0:
+		CreateComd(k); //create命令，k为命令中的参数个数(命令本身除外),下同
 		break;
-	case 1:OpenComd(k);		//open命令，打开文件 
+	case 1:
+		OpenComd(k); //open命令，打开文件
 		break;
-	case 2:WriteComd(k);		//write命令，写文件 
+	case 2:
+		WriteComd(k); //write命令，写文件
 		break;
-	case 3:ReadComd(k);		//read命令，读文件 
+	case 3:
+		ReadComd(k); //read命令，读文件
 		break;
-	case 4:CloseComd(k);		//close命令，关闭文件 
+	case 4:
+		CloseComd(k); //close命令，关闭文件
 		break;
-	case 5:DelComd(k);			//del命令，删除文件
+	case 5:
+		DelComd(k); //del命令，删除文件
 		break;
-	case 6:DirComd(k);			//dir命令，显示文件目录 
+	case 6:
+		DirComd(k); //dir命令，显示文件目录
 		break;
-	case 7:CdComd(k);			//cd命令，指定当前目录 
+	case 7:
+		CdComd(k); //cd命令，指定当前目录
 		break;
-	case 8:MdComd(k);			//md命令，创建子目录 
+	case 8:
+		MdComd(k); //md命令，创建子目录
 		break;
-	case 9:RdComd(k);			//rd命令，删除子目录 
+	case 9:
+		RdComd(k); //rd命令，删除子目录
 		break;
-	case 10:RenComd(k);		//ren命令，文件更名 
+	case 10:
+		RenComd(k); //ren命令，文件更名
 		break;
-	case 11:CopyComd(k);		//copy命令，复制文件
+	case 11:
+		CopyComd(k); //copy命令，复制文件
 		break;
-	case 12:TypeComd(k);		//type命令，显示文件内容 
+	case 12:
+		TypeComd(k); //type命令，显示文件内容
 		break;
-	case 13:HelpComd();		//help命令，显示帮助信息 
+	case 13:
+		HelpComd(); //help命令，显示帮助信息
 		break;
-	case 14:AttribComd(k);		//attrib命令，修改文件属性 
+	case 14:
+		AttribComd(k); //attrib命令，修改文件属性
 		break;
-	case 15:UofComd();			//uof命令，显示文件打开表(调试程序用) 
+	case 15:
+		UofComd(); //uof命令，显示文件打开表(调试程序用)
 		break;
-	case 16:CloseallComd(1);	//closeall命令，关闭所有文件
+	case 16:
+		CloseallComd(1); //closeall命令，关闭所有文件
 		break;
-	case 17:blockf(k);			//block命令，显示文件的盘块号(调试程序用)
+	case 17:
+		blockf(k); //block命令，显示文件的盘块号(调试程序用)
 		break;
-	case 18:RewindComd(k);		//rewind命令，将读指针移到文件开头 
+	case 18:
+		RewindComd(k); //rewind命令，将读指针移到文件开头
 		break;
-	case 19:FseekComd(k);		//fseek命令：将读、写指针都移到指定记录号 
+	case 19:
+		FseekComd(k); //fseek命令：将读、写指针都移到指定记录号
 		break;
-	case 20:FatComd();			//fat命令，显示FAT空闲块个数(调试程序用)
+	case 20:
+		FatComd(); //fat命令，显示FAT空闲块个数(调试程序用)
 		break;
-	case 21:CheckComd();		//check命令，核对FAT空闲块个数(调试程序用)
+	case 21:
+		CheckComd(); //check命令，核对FAT空闲块个数(调试程序用)
 		break;
-	case 22:ExitComd();		//exit命令，退出系统
+	case 22:
+		ExitComd(); //exit命令，退出系统
 		break;
-	case 23:UndelComd(k);		//undel命令，恢复被删除文件
+	case 23:
+		UndelComd(k); //undel命令，恢复被删除文件
 		break;
-	case 24:PromptComd();		//prompt命令，提示符中路径名显示与否的切换
+	case 24:
+		PromptComd(); //prompt命令，提示符中路径名显示与否的切换
 		break;
-	case 25:UdTabComd();		//udtab命令，显示被删除文件表(调试程序用)
+	case 25:
+		UdTabComd(); //udtab命令，显示被删除文件表(调试程序用)
 		break;
-	default:cout << "\n命令错:" << comd[0] << endl;
+	default:
+		cout << "\n命令错:" << comd[0] << endl;
 	}
 }
 
 //////////////////////////////////////////////////////////////////////////////////////
 
-void HelpComd()				//help命令，帮助信息(显示各命令格式)
+void HelpComd() //help命令，帮助信息(显示各命令格式)
 {
 	cout << "\n* * * * * * * * * 本系统主要的文件操作命令简述如下 * * * * * * * * * *\n\n";
 	cout << "create <文件名>[ <文件属性>]　　　　　　——创建新文件,文件属性是r、h或s。\n";
@@ -542,18 +571,22 @@ int GetAttrib(char* str, char& attrib)
 		return -1;
 	}
 	len = strlen(str);
-	_strlwr(str);		//转换成小写字母
+	_strlwr(str); //转换成小写字母
 	for (i = 1; i < len; i++)
 	{
 		switch (str[i])
 		{
-		case 'r': attrib = attrib | ar;
+		case 'r':
+			attrib = attrib | ar;
 			break;
-		case 'h': attrib = attrib | ah;
+		case 'h':
+			attrib = attrib | ah;
 			break;
-		case 's': attrib = attrib | as;
+		case 's':
+			attrib = attrib | as;
 			break;
-		default: cout << "\n命令中属性参数错误。\n";
+		default:
+			cout << "\n命令中属性参数错误。\n";
 			return -1;
 		}
 	}
@@ -562,7 +595,7 @@ int GetAttrib(char* str, char& attrib)
 
 /////////////////////////////////////////////////////////////////
 
-int DirComd(int k)	//dir命令，显示指定目录的内容（文件名或目录名等）
+int DirComd(int k) //dir命令，显示指定目录的内容（文件名或目录名等）
 {
 	// 命令形式：dir[ <目录名>[ <属性>]]
 	// 命令功能：显示"目录名"指定的目录中文件名和第一级子目录名。若指
@@ -577,9 +610,9 @@ int DirComd(int k)	//dir命令，显示指定目录的内容（文件名或目�
 	// 示文件名时，显示该文件长度；显示目录名时，同时显示"<DIR>"的字样。
 
 	// 举例：
-	//		dir /usr |h	 
+	//		dir /usr |h
 	// 上述命令显示根目录下usr子目录中全部"隐藏"属性的文件名和子目录名
-	//		dir ..		 
+	//		dir ..
 	// 上述命令显示当前目录的父目录中全部"非隐藏"属性的文件和子目录名(包
 	// 括"只读"属性的也显示，但一般不显示"系统"属性的，因为"系统"属性的对
 	// 象一般也是"隐藏"属性的)。
@@ -588,33 +621,34 @@ int DirComd(int k)	//dir命令，显示指定目录的内容（文件名或目�
 	// 另外还可以考虑含通配符的问题。
 
 	short i, s;
-	short filecount, dircount, fsizecount;	//文件数、目录数、文件长度累计
+	short filecount, dircount, fsizecount; //文件数、目录数、文件长度累计
 	char ch, attrib = '\0', attr, cc;
 	FCB* fcbp, * p;
 
 	filecount = dircount = fsizecount = 0;
-	if (k > 1)	//命令中多于1个参数，错误(较复杂的处理应当允许有多个参数)
+	if (k > 1) //命令中多于1个参数，错误(较复杂的处理应当允许有多个参数)
 	{
 		cout << "\n命令错误：参数太多。\n";
 		return -1;
 	}
-	if (k < 1)	//命令无参数，显示当前目录
+	if (k < 1) //命令无参数，显示当前目录
 	{
 		strcpy(temppath, curpath.cpath);
-		s = curpath.fblock;	//当前目录的首块号保存于s
+		s = curpath.fblock; //当前目录的首块号保存于s
 	}
-	else if (k == 1)		//命令有1个参数(k=1)
+	else if (k == 1) //命令有1个参数(k=1)
 	{
 		if (comd[1][0] == '|')
 		{
 			i = GetAttrib(comd[1], attrib);
-			if (i < 0) return i;
+			if (i < 0)
+				return i;
 			strcpy(temppath, curpath.cpath);
-			s = curpath.fblock;	//当前目录的首块号保存于s
+			s = curpath.fblock; //当前目录的首块号保存于s
 		}
 		else
 		{
-			s = FindPath(comd[1], '\020', 1, fcbp);	//找指定目录(的首块号)
+			s = FindPath(comd[1], '\020', 1, fcbp); //找指定目录(的首块号)
 			if (s < 1)
 			{
 				cout << "\n输入的路径错误！" << endl;
@@ -622,42 +656,44 @@ int DirComd(int k)	//dir命令，显示指定目录的内容（文件名或目�
 			}
 		}
 	}
-	else		//命令有2个参数(k=2)
+	else //命令有2个参数(k=2)
 	{
-		s = FindPath(comd[1], '\020', 1, fcbp);	//找指定目录(的首块号)
+		s = FindPath(comd[1], '\020', 1, fcbp); //找指定目录(的首块号)
 		if (s < 1)
 		{
 			cout << "\n输入的路径错误！" << endl;
 			return -1;
 		}
 		i = GetAttrib(comd[2], attrib);
-		if (i < 0) return i;
+		if (i < 0)
+			return i;
 	}
-	cout << "\nThe Directory of C:" << temppath << endl << endl;
+	cout << "\nThe Directory of C:" << temppath << endl
+		<< endl;
 	while (s > 0)
 	{
-		p = (FCB*)Disk[s];	//p指向该目录的第一个盘块
+		p = (FCB*)Disk[s]; //p指向该目录的第一个盘块
 		for (i = 0; i < 4; i++, p++)
 		{
-			ch = p->FileName[0];	//取文件(目录)名的第一个字符
-			if (ch == (char)0xe5)		//空目录项
+			ch = p->FileName[0];  //取文件(目录)名的第一个字符
+			if (ch == (char)0xe5) //空目录项
 				continue;
-			if (ch == '\0')		//已至目录尾部
+			if (ch == '\0') //已至目录尾部
 				break;
-			attr = p->Fattrib & '\07';	//不考虑文件还是目录,只考虑属性
-			if (attrib == 0)			//命令中没有指定属性
+			attr = p->Fattrib & '\07'; //不考虑文件还是目录,只考虑属性
+			if (attrib == 0)		   //命令中没有指定属性
 			{
-				if (attr & '\02')		//不显示“隐藏”属性文件
+				if (attr & '\02') //不显示“隐藏”属性文件
 					continue;
 			}
 			else
 			{
 				cc = attr & attrib;
-				if (attrib != cc)		//只显示指定属性的文件
+				if (attrib != cc) //只显示指定属性的文件
 					continue;
 			}
 			cout << setiosflags(ios::left) << setw(20) << p->FileName;
-			if (p->Fattrib >= '\20')	//是子目录
+			if (p->Fattrib >= '\20') //是子目录
 			{
 				cout << "<DIR>\n";
 				dircount++;
@@ -670,8 +706,9 @@ int DirComd(int k)	//dir命令，显示指定目录的内容（文件名或目�
 				fsizecount += p->Fsize;
 			}
 		}
-		if (ch == '\0') break;
-		s = FAT[s];		//指向该目录的下一个盘块
+		if (ch == '\0')
+			break;
+		s = FAT[s]; //指向该目录的下一个盘块
 	}
 	cout << resetiosflags(ios::left) << endl;
 	cout << setiosflags(ios::right) << setw(6) << filecount << " file(s)";
@@ -691,25 +728,25 @@ int CdComd(int k)
 	short i, s;
 	char attrib = (char)16;
 	FCB* fcbp;
-	if (k > 1)	//命令中多于1个参数，错误
+	if (k > 1) //命令中多于1个参数，错误
 	{
 		cout << "\n命令错误：参数太多。\n";
 		return -1;
 	}
-	if (k < 1)	//命令无参数，显示当前目录
+	if (k < 1) //命令无参数，显示当前目录
 	{
 		cout << "\nThe Current Directory is C:" << curpath.cpath << endl;
 		return 1;
 	}
-	else		//命令有一个参数，将指定目录作为当前目录
+	else //命令有一个参数，将指定目录作为当前目录
 	{
 		i = strlen(comd[1]);
-		if (i > 1 && comd[1][i - 1] == '/')	//路径以"/"结尾，错误
+		if (i > 1 && comd[1][i - 1] == '/') //路径以"/"结尾，错误
 		{
 			cout << "\n路径名错误！\n";
 			return -1;
 		}
-		s = FindPath(comd[1], attrib, 1, fcbp);	//找指定目录(的首块号)
+		s = FindPath(comd[1], attrib, 1, fcbp); //找指定目录(的首块号)
 		if (s < 1)
 		{
 			cout << "\n路径名错误！" << endl;
@@ -725,29 +762,29 @@ int CdComd(int k)
 
 /////////////////////////////////////////////////////////////////
 
-int M_NewDir(char* Name, FCB* p, short fs, char attrib)	//在p位置创建一新子目录
+int M_NewDir(char* Name, FCB* p, short fs, char attrib) //在p位置创建一新子目录
 {
 	//成功返回新子目录的首块号
 
 	short i, b, kk;
 	FCB* q;
 	kk = SIZE / sizeof(FCB);
-	b = getblock();		//新目录须分配一磁盘块用于存储目录项“..”
+	b = getblock(); //新目录须分配一磁盘块用于存储目录项“..”
 	if (b < 0)
 		return b;
-	strcpy(p->FileName, Name);	//目录名
-	p->Fattrib = attrib;			//目录项属性为目录而非文件
-	p->Addr = b;					//该新目录的首块号
-	p->Fsize = 0;					//子目录的长度约定为0
+	strcpy(p->FileName, Name); //目录名
+	p->Fattrib = attrib;	   //目录项属性为目录而非文件
+	p->Addr = b;			   //该新目录的首块号
+	p->Fsize = 0;			   //子目录的长度约定为0
 	q = (FCB*)Disk[b];
 	for (i = 0; i < kk; i++, q++)
-		q->FileName[0] = '\0';	//置空目录项标志*/
+		q->FileName[0] = '\0'; //置空目录项标志*/
 	q = (FCB*)Disk[b];
-	strcpy(q->FileName, "..");	//新目录中的第一个目录项名是“..”
-	q->Fattrib = (char)16;		//目录项属性为目录而非文件
-	q->Addr = fs;					//该目录的首块号是父目录的首块号
-	q->Fsize = 0;					//子目录的长度约定为0
-	return b;					//成功创建，返回
+	strcpy(q->FileName, ".."); //新目录中的第一个目录项名是“..”
+	q->Fattrib = (char)16;	 //目录项属性为目录而非文件
+	q->Addr = fs;			   //该目录的首块号是父目录的首块号
+	q->Fsize = 0;			   //子目录的长度约定为0
+	return b;				   //成功创建，返回
 }
 
 /////////////////////////////////////////////////////////////////
@@ -762,7 +799,7 @@ int ProcessPath(char* path, char*& Name, int k, int n, char attrib)
 	short i, len, s;
 	FCB* fcbp;
 
-	if (n && k != n)	//n=0,参数个数k任意,n>0,必须k=n
+	if (n && k != n) //n=0,参数个数k任意,n>0,必须k=n
 	{
 		cout << "\n命令参数个数错误！\n";
 		return -1;
@@ -771,7 +808,7 @@ int ProcessPath(char* path, char*& Name, int k, int n, char attrib)
 	for (i = len - 1; i >= 0; i--)
 		if (path[i] == '/')
 			break;
-	Name = &path[i + 1];		//取路径中最后一个名字
+	Name = &path[i + 1]; //取路径中最后一个名字
 	if (i == -1)
 	{
 		s = curpath.fblock;
@@ -800,7 +837,7 @@ int ProcessPath(char* path, char*& Name, int k, int n, char attrib)
 
 /////////////////////////////////////////////////////////////////
 
-int MdComd(int k)		//md命令处理函数
+int MdComd(int k) //md命令处理函数
 {
 	// 命令形式：md <目录名>
 	// 功能：在指定路径下创建指定目录，若没有指定路径，则在当前目录下创建指定目录。
@@ -830,8 +867,8 @@ int MdComd(int k)		//md命令处理函数
 	}
 	s = ProcessPath(comd[1], DirName, k, 0, attrib);
 	if (s < 0)
-		return s;		//失败，返回
-	if (!IsName(DirName))		//若名字不符合规则
+		return s;		  //失败，返回
+	if (!IsName(DirName)) //若名字不符合规则
 	{
 		cout << "\n命令中的新目录名错误。\n";
 		return -1;
@@ -842,22 +879,22 @@ int MdComd(int k)		//md命令处理函数
 		cout << "\n错误：目录与文件或已存在目录重名！\n";
 		return -1;
 	}
-	if (k == 2)		//命令形式：md <目录名> |<属性符>
+	if (k == 2) //命令形式：md <目录名> |<属性符>
 	{
 		i = GetAttrib(comd[2], attrib);
 		if (i < 0)
 			return i;
 	}
-	s0 = FindBlankFCB(s, p);//找空白目录项
-	if (s0 < 0)			//磁盘满
+	s0 = FindBlankFCB(s, p); //找空白目录项
+	if (s0 < 0)				 //磁盘满
 		return s0;
-	s0 = M_NewDir(DirName, p, s, attrib);	//在p所指位置创建一新子目录项
-	if (s0 < 0)		//创建失败
+	s0 = M_NewDir(DirName, p, s, attrib); //在p所指位置创建一新子目录项
+	if (s0 < 0)							  //创建失败
 	{
 		cout << "\n磁盘空间已满，创建目录失败。\n";
 		return -1;
 	}
-	return 1;		//新目录创建成功，返回
+	return 1; //新目录创建成功，返回
 }
 
 /////////////////////////////////////////////////////////////////
@@ -870,10 +907,10 @@ int RdComd(int k)
 	short i, j, count = 0, fs, s0, s;
 	char attrib = (char)16, *DirName;
 	FCB* p, * fcbp;
-	fs = ProcessPath(comd[1], DirName, k, 1, attrib);	//返回DirName的父目录的首块号
+	fs = ProcessPath(comd[1], DirName, k, 1, attrib); //返回DirName的父目录的首块号
 	if (fs < 0)
-		return fs;				//失败，返回
-	s0 = s = FindFCB(DirName, fs, attrib, fcbp);//取DirName的首块号
+		return fs;								 //失败，返回
+	s0 = s = FindFCB(DirName, fs, attrib, fcbp); //取DirName的首块号
 	if (s < 1)
 	{
 		cout << "\n要删除的目录不存在。\n";
@@ -884,16 +921,16 @@ int RdComd(int k)
 		cout << "\n不能删除当前目录。\n";
 		return 0;
 	}
-	while (s > 0)		//循环查找，直到目录尾部
+	while (s > 0) //循环查找，直到目录尾部
 	{
 		p = (FCB*)Disk[s];
 		for (i = 0; i < 4; i++, p++)
 		{
-			if (p->FileName[0] != (char)0xe5 && p->FileName[0] != '\0')//累计非空目录项
+			if (p->FileName[0] != (char)0xe5 && p->FileName[0] != '\0') //累计非空目录项
 				count++;
 		}
 		//s0=s;			//记下上一个盘块号
-		s = FAT[s];		//取下一个盘块号
+		s = FAT[s]; //取下一个盘块号
 	}
 	if (count > 1)
 	{
@@ -901,35 +938,35 @@ int RdComd(int k)
 		return -1;
 	}
 	//s0=fcbp->Addr;		//取DirName的首块号
-	while (s0 > 0)			//归还目录DirName所占的磁盘空间
+	while (s0 > 0) //归还目录DirName所占的磁盘空间
 	{
-		s = FAT[s0];			//记下第s0块的后续块号		
-		FAT[s0] = 0;			//回收第s0块
-		FAT[0]++;			//空闲盘块数增1
-		s0 = s;				//后续块号赋予s0
+		s = FAT[s0]; //记下第s0块的后续块号
+		FAT[s0] = 0; //回收第s0块
+		FAT[0]++;	//空闲盘块数增1
+		s0 = s;		 //后续块号赋予s0
 	}
-	fcbp->FileName[0] = (char)0xe5;	//删除DirName的目录项
-	if (strcmp(temppath, "/") == 0)	//所删除的子目录在根目录
+	fcbp->FileName[0] = (char)0xe5; //删除DirName的目录项
+	if (strcmp(temppath, "/") == 0) //所删除的子目录在根目录
 		return 1;
 	//所删除的子目录DirName不在根目录时，对其父目录作以下处理
-	s0 = s = fs;				//取DirName父目录的首块号
-	while (s > 0)				//整理DirName的父目录空间(回收无目录项的盘块)
+	s0 = s = fs;  //取DirName父目录的首块号
+	while (s > 0) //整理DirName的父目录空间(回收无目录项的盘块)
 	{
 		p = (FCB*)Disk[s];
 		for (j = i = 0; i < 4; i++, p++)
-			if (p->FileName[0] != (char)0xe5 && p->FileName[0] != '\0')//累计非空目录项
+			if (p->FileName[0] != (char)0xe5 && p->FileName[0] != '\0') //累计非空目录项
 				j++;
 		if (j == 0)
 		{
-			FAT[s0] = FAT[s];		//调整指针
-			FAT[s] = 0;			//回收s号盘块
-			FAT[0]++;			//空闲盘块数增1
+			FAT[s0] = FAT[s]; //调整指针
+			FAT[s] = 0;		  //回收s号盘块
+			FAT[0]++;		  //空闲盘块数增1
 			s = FAT[s0];
 		}
 		else
 		{
-			s0 = s;				//记下上一个盘块号
-			s = FAT[s];			//s指向下一个盘块
+			s0 = s;		//记下上一个盘块号
+			s = FAT[s]; //s指向下一个盘块
 		}
 	}
 	return 1;
@@ -937,7 +974,7 @@ int RdComd(int k)
 
 /////////////////////////////////////////////////////////////////
 
-int TypeComd(int k)		//type命令处理函数(显示文件内容)
+int TypeComd(int k) //type命令处理函数(显示文件内容)
 {
 	// 显示文件内容：type <文件名>，显示指定文件的内容。
 	// 若指定文件不存在，则给出错误信息。
@@ -945,7 +982,7 @@ int TypeComd(int k)		//type命令处理函数(显示文件内容)
 	short i, s, size, jj = 0;
 	char attrib = '\0', * FileName;
 	char* Buffer;
-	char gFileName[PATH_LEN];	//存放文件全路径名
+	char gFileName[PATH_LEN]; //存放文件全路径名
 	FCB* fcbp;
 
 	if (k < 1)
@@ -953,15 +990,15 @@ int TypeComd(int k)		//type命令处理函数(显示文件内容)
 		cout << "\n命令中无文件名。\n";
 		return -1;
 	}
-	s = ProcessPath(comd[1], FileName, k, 0, '\020');//取FileName所在目录的首块号
-	if (s < 1)			//路径错误
-		return s;		//失败，返回
-	s = FindFCB(FileName, s, attrib, fcbp);		//取FileName的首块号(查其存在性)
+	s = ProcessPath(comd[1], FileName, k, 0, '\020'); //取FileName所在目录的首块号
+	if (s < 1)										  //路径错误
+		return s;									  //失败，返回
+	s = FindFCB(FileName, s, attrib, fcbp);			  //取FileName的首块号(查其存在性)
 	strcpy(gFileName, temppath);
 	i = strlen(temppath);
 	if (temppath[i - 1] != '/')
 		strcat(gFileName, "/");
-	strcat(gFileName, FileName);	//构造文件的全路径名
+	strcat(gFileName, FileName); //构造文件的全路径名
 	if (s < 0)
 	{
 		cout << "\n文件" << gFileName << "不存在。\n";
@@ -972,7 +1009,7 @@ int TypeComd(int k)		//type命令处理函数(显示文件内容)
 	else
 	{
 		size = fcbp->Fsize;
-		Buffer = new char[size + 1];		//分配动态内存空间
+		Buffer = new char[size + 1]; //分配动态内存空间
 		while (s > 0)
 		{
 			for (i = 0; i < SIZE; i++, jj++)
@@ -987,17 +1024,17 @@ int TypeComd(int k)		//type命令处理函数(显示文件内容)
 		}
 		Buffer[jj] = '\0';
 		cout << Buffer << endl;
-		delete[] Buffer;		//释放分配的动态内存空间
+		delete[] Buffer; //释放分配的动态内存空间
 	}
 	return 1;
 }
 
 /////////////////////////////////////////////////////////////////
 
-int blockf(int k)	//block命令处理函数(显示文件或目录占用的盘块号)
+int blockf(int k) //block命令处理函数(显示文件或目录占用的盘块号)
 {
 	short s;
-	char attrib = '\040';		//32表示任意(文件或子目录)目录项都可以
+	char attrib = '\040'; //32表示任意(文件或子目录)目录项都可以
 	FCB* fcbp;
 
 	if (k != 1)
@@ -1005,7 +1042,7 @@ int blockf(int k)	//block命令处理函数(显示文件或目录占用的盘块
 		cout << "\n命令中参数个数错误。\n";
 		return -1;
 	}
-	s = FindPath(comd[1], attrib, 1, fcbp);	//找指定目录(的首块号)
+	s = FindPath(comd[1], attrib, 1, fcbp); //找指定目录(的首块号)
 	if (s < 0)
 	{
 		cout << "\n路径名错误！" << endl;
@@ -1013,10 +1050,12 @@ int blockf(int k)	//block命令处理函数(显示文件或目录占用的盘块
 	}
 	if (s == 0)
 	{
-		cout << '\n' << temppath << "是空文件\n";
+		cout << '\n'
+			<< temppath << "是空文件\n";
 		return 0;
 	}
-	cout << "\n" << temppath << "占用的盘块号为：";
+	cout << "\n"
+		<< temppath << "占用的盘块号为：";
 	while (s > 0)
 	{
 		cout << s << "  ";
@@ -1030,67 +1069,67 @@ int blockf(int k)	//block命令处理函数(显示文件或目录占用的盘块
 
 void Put_UOF(char* gFileName, int i, short status, FCB* fcbp)
 {
-	strcpy(uof[i].fname, gFileName);	//复制文件全路径名
-	uof[i].attr = fcbp->Fattrib;		//复制文件属性
-	uof[i].faddr = fcbp->Addr;		//文件的首块号(0代表空文件)
+	strcpy(uof[i].fname, gFileName); //复制文件全路径名
+	uof[i].attr = fcbp->Fattrib;	 //复制文件属性
+	uof[i].faddr = fcbp->Addr;		 //文件的首块号(0代表空文件)
 	uof[i].fsize = fcbp->Fsize;
 	uof[i].fp = fcbp;
-	uof[i].state = status;					//打开状态
-	if (fcbp->Fsize > 0)				//若文件非空
-		uof[i].readp = 1;				//读指针指向文件开头
+	uof[i].state = status; //打开状态
+	if (fcbp->Fsize > 0)   //若文件非空
+		uof[i].readp = 1;  //读指针指向文件开头
 	else
-		uof[i].readp = 0;				//读指针指向空位置
-	uof[i].writep = fcbp->Fsize + 1;	//写指针指向文件末尾
+		uof[i].readp = 0;			 //读指针指向空位置
+	uof[i].writep = fcbp->Fsize + 1; //写指针指向文件末尾
 }
 
 /////////////////////////////////////////////////////////////////
 
-int FindBlankFCB(short s, FCB*& fcbp1)	//寻找首块号为s的目录中的空目录项
+int FindBlankFCB(short s, FCB*& fcbp1) //寻找首块号为s的目录中的空目录项
 {
 	short i, s0;
-	while (s > 0)			//在首块号为s的目录找空登记栏，直到目录尾部
+	while (s > 0) //在首块号为s的目录找空登记栏，直到目录尾部
 	{
 		fcbp1 = (FCB*)Disk[s];
 		for (i = 0; i < 4; i++, fcbp1++)
 			if (fcbp1->FileName[0] == (char)0xe5 || fcbp1->FileName[0] == '\0')
 			{
-				fcbp1->Addr = fcbp1->Fsize = 0;		//假设为空目录项
+				fcbp1->Addr = fcbp1->Fsize = 0; //假设为空目录项
 				return 1;						//找到空目录项，成功返回
 			}
 		s0 = s;		//记下上一个盘块号
-		s = FAT[s];	//取下一个盘块号
+		s = FAT[s]; //取下一个盘块号
 	}
 	cout << 1;
-	if (strcmp(temppath, "/") == 0)	//若是根目录
+	if (strcmp(temppath, "/") == 0) //若是根目录
 	{
 		cout << "\n根目录已满，不能再创建目录项。\n";
 		return -1;
 	}
-	s = getblock();	//取一空闲盘快
+	s = getblock(); //取一空闲盘快
 	if (s < 0)		//无空闲盘快
 	{
 		cout << "\n磁盘空间已满，创建目录失败。\n";
 		return -1;
 	}
-	FAT[s0] = s;		//构成FAT链
+	FAT[s0] = s; //构成FAT链
 	fcbp1 = (FCB*)Disk[s];
 	for (i = 0; i < 4; i++, fcbp1++)
-		fcbp1->FileName[0] = '\0';	//置空目录标志
+		fcbp1->FileName[0] = '\0'; //置空目录标志
 	fcbp1 = (FCB*)Disk[s];
-	fcbp1->Addr = fcbp1->Fsize = 0;		//假设为空目录项
+	fcbp1->Addr = fcbp1->Fsize = 0; //假设为空目录项
 	return 1;
 }
 
 /////////////////////////////////////////////////////////////////
 
-int CreateComd(int k)		//create命令处理函数：建立新文件 
+int CreateComd(int k) //create命令处理函数：建立新文件
 {
 	// 创建文件：create <文件名> [<文件属性>]，创建一个指定名字的新文件，
 	// 即在目录中增加一目录项，不考虑文件的内容。对于重名文件给出错误信息。
 
 	short i, i_uof, s0, s;
 	char attrib = '\0', * FileName;
-	char gFileName[PATH_LEN];	//存放文件全路径名
+	char gFileName[PATH_LEN]; //存放文件全路径名
 	char ch, * p;
 	FCB* fcbp1;
 	if (k > 2 || k < 1)
@@ -1098,15 +1137,15 @@ int CreateComd(int k)		//create命令处理函数：建立新文件
 		cout << "\n命令中参数个数不对。\n";
 		return -1;
 	}
-	s = ProcessPath(comd[1], FileName, k, 0, '\020');//取FileName所在目录的首块号
-	if (s < 1)			//路径错误
-		return s;		//失败，返回
-	if (!IsName(FileName))		//若名字不符合规则
+	s = ProcessPath(comd[1], FileName, k, 0, '\020'); //取FileName所在目录的首块号
+	if (s < 1)										  //路径错误
+		return s;									  //失败，返回
+	if (!IsName(FileName))							  //若名字不符合规则
 	{
 		cout << "\n命令中的新文件名错误。\n";
 		return -2;
 	}
-	s0 = FindFCB(FileName, s, attrib, fcbp1);	//取FileName的首块号(查其存在性)
+	s0 = FindFCB(FileName, s, attrib, fcbp1); //取FileName的首块号(查其存在性)
 	if (s0 > 0)
 	{
 		cout << "\n有同名文件，不能建立。\n";
@@ -1116,29 +1155,33 @@ int CreateComd(int k)		//create命令处理函数：建立新文件
 	i = strlen(temppath);
 	if (temppath[i - 1] != '/')
 		strcat(gFileName, "/");
-	strcat(gFileName, FileName);	//构造文件的全路径名
+	strcat(gFileName, FileName); //构造文件的全路径名
 	if (k == 2)
 	{
 		p = comd[2];
-		while (*p != '\0')	//处理文件属性
+		while (*p != '\0') //处理文件属性
 		{
 			ch = *p;
 			ch = tolower(ch);
 			switch (ch)
 			{
-			case 'r': attrib = attrib | (char)1;
+			case 'r':
+				attrib = attrib | (char)1;
 				break;
-			case 'h': attrib = attrib | (char)2;
+			case 'h':
+				attrib = attrib | (char)2;
 				break;
-			case 's': attrib = attrib | (char)4;
+			case 's':
+				attrib = attrib | (char)4;
 				break;
-			default: cout << "\n输入的文件属性错误。\n";
+			default:
+				cout << "\n输入的文件属性错误。\n";
 				return -3;
 			}
 			p++;
 		}
 	}
-	for (i_uof = 0; i_uof < S; i_uof++)			//在UOF中找空表项
+	for (i_uof = 0; i_uof < S; i_uof++) //在UOF中找空表项
 		if (uof[i_uof].state == 0)
 			break;
 	if (i_uof == S)
@@ -1146,31 +1189,31 @@ int CreateComd(int k)		//create命令处理函数：建立新文件
 		cout << "\nUOF已满，不能创建文件。\n";
 		return -4;
 	}
-	i = FindBlankFCB(s, fcbp1);			//寻找首块号为s的目录中的空目录项
+	i = FindBlankFCB(s, fcbp1); //寻找首块号为s的目录中的空目录项
 	if (i < 0)
 	{
 		cout << "\n创建文件失败。\n";
 		return i;
 	}
-	strcpy(fcbp1->FileName, FileName);	//目录项中保存文件名
-	fcbp1->Fattrib = attrib;				//复制文件属性
-	fcbp1->Addr = 0;						//空文件首块号设为0
-	fcbp1->Fsize = 0;						//空文件长度为0
-	Put_UOF(gFileName, i_uof, 1, fcbp1);	//建立UOF登记项
+	strcpy(fcbp1->FileName, FileName);   //目录项中保存文件名
+	fcbp1->Fattrib = attrib;			 //复制文件属性
+	fcbp1->Addr = 0;					 //空文件首块号设为0
+	fcbp1->Fsize = 0;					 //空文件长度为0
+	Put_UOF(gFileName, i_uof, 1, fcbp1); //建立UOF登记项
 	cout << "\n文件" << gFileName << "建立成功\n";
-	return 1;							//文件创建成功，返回
+	return 1; //文件创建成功，返回
 }
 
 /////////////////////////////////////////////////////////////////
 
-int Check_UOF(char* Name)		//检查UOF中有无命令中指定的文件
+int Check_UOF(char* Name) //检查UOF中有无命令中指定的文件
 {
 	int i;
-	for (i = 0; i < S; i++)			//查用户打开文件表UOF
+	for (i = 0; i < S; i++) //查用户打开文件表UOF
 	{
-		if (uof[i].state == 0)	//空表项
+		if (uof[i].state == 0) //空表项
 			continue;
-		if (strcmp(Name, uof[i].fname) == 0)	//找到
+		if (strcmp(Name, uof[i].fname) == 0) //找到
 			break;
 	}
 	return i;
@@ -1178,7 +1221,7 @@ int Check_UOF(char* Name)		//检查UOF中有无命令中指定的文件
 
 /////////////////////////////////////////////////////////////////
 
-int OpenComd(int k)			//open命令处理函数：打开文件 
+int OpenComd(int k) //open命令处理函数：打开文件
 {
 	// 命令形式：open <文件名>
 	// 若指定文件存在且尚未打开，则打开之，并在用户打开文件表（UOF）中登
@@ -1187,13 +1230,13 @@ int OpenComd(int k)			//open命令处理函数：打开文件
 
 	short i, s0, s;
 	char attrib = '\0', * FileName;
-	char gFileName[PATH_LEN];	//存放文件全路径名
+	char gFileName[PATH_LEN]; //存放文件全路径名
 	FCB* fcbp;
 
-	s0 = ProcessPath(comd[1], FileName, k, 1, '\20');//取FileName所在目录的首块号
-	if (s0 < 1)			//路径错误
-		return s0;		//失败，返回
-	s = FindFCB(FileName, s0, attrib, fcbp);		//取FileName的首块号(查其存在性)
+	s0 = ProcessPath(comd[1], FileName, k, 1, '\20'); //取FileName所在目录的首块号
+	if (s0 < 1)										  //路径错误
+		return s0;									  //失败，返回
+	s = FindFCB(FileName, s0, attrib, fcbp);		  //取FileName的首块号(查其存在性)
 	if (s < 0)
 	{
 		cout << "\n要打开的文件不存在。\n";
@@ -1203,14 +1246,14 @@ int OpenComd(int k)			//open命令处理函数：打开文件
 	i = strlen(temppath);
 	if (temppath[i - 1] != '/')
 		strcat(gFileName, "/");
-	strcat(gFileName, FileName);	//构造文件的全路径名
-	i = Check_UOF(gFileName);		//查UOF
-	if (i < S)					//该文件已在UOF中
+	strcat(gFileName, FileName); //构造文件的全路径名
+	i = Check_UOF(gFileName);	//查UOF
+	if (i < S)					 //该文件已在UOF中
 	{
 		cout << "\n文件" << gFileName << "原先已经打开!\n";
 		return -3;
 	}
-	for (i = 0; i < S; i++)			//在UOF中找空表项
+	for (i = 0; i < S; i++) //在UOF中找空表项
 		if (uof[i].state == 0)
 			break;
 	if (i == S)
@@ -1225,29 +1268,31 @@ int OpenComd(int k)			//open命令处理函数：打开文件
 
 /////////////////////////////////////////////////////////////////
 
-int getblock()	//获得一个空闲盘块，供fappend()函数调用
+int getblock() //获得一个空闲盘块，供fappend()函数调用
 {
 	short b;
-	if (FAT[0] == 0)	//FAT[0]中是磁盘空闲块数
-		return -1;	//磁盘已满(已无空闲盘块)
+	if (FAT[0] == 0) //FAT[0]中是磁盘空闲块数
+		return -1;   //磁盘已满(已无空闲盘块)
 	for (b = ffbp; b < K; b++)
 		if (!FAT[b])
 			break;
 	if (b == K)
 	{
 		for (b = 1; b < ffbp; b++)
-			if (!FAT[b]) break;
+			if (!FAT[b])
+				break;
 	}
 	ffbp = b + 1;
-	if (ffbp == K) ffbp = 1;
+	if (ffbp == K)
+		ffbp = 1;
 	FAT[0]--;	//盘块数减1
-	FAT[b] = -1;	//置盘块已分配标志(此处不妨假设其为文件尾)
+	FAT[b] = -1; //置盘块已分配标志(此处不妨假设其为文件尾)
 	return b;	//返回取得的空闲盘块号
 }
 
 ////////////////////////////////////////////////////////////////
 
-int WriteComd(int k)		//write命令的处理函数
+int WriteComd(int k) //write命令的处理函数
 {
 	// 写文件：write <文件名> [<位置>[ insert]]，命令中若无"位置"参数，则在写指
 	// 针所指位置写入文件内容；若提供"位置"参数，则在对应位置写入内容。位置可以
@@ -1268,10 +1313,10 @@ int WriteComd(int k)		//write命令的处理函数
 	//【思考】如何使参数“insert”、“append”只要前3个字符对就可以，但多于3个字符也行。例如：
 	// 对于“insert”，输入ins、inse、inser、insert(不区分大小写)都可以，输入其它不行。
 
-#define BSIZE 40*SIZE+1
+#define BSIZE 40 * SIZE + 1
 	short int ii, ii_uof, len0, len, len1, pos, ins = 0;
 	short int bn0, bn1, jj, count = 0;
-	char attrib = '\0', Buffer[BSIZE];		//为方便计，假设一次最多写入2560字节
+	char attrib = '\0', Buffer[BSIZE]; //为方便计，假设一次最多写入2560字节
 	char* buf;
 	FCB* fcbp;
 
@@ -1280,32 +1325,33 @@ int WriteComd(int k)		//write命令的处理函数
 		cout << "\n命令中没有文件名。\n";
 		return -1;
 	}
-	FindPath(comd[1], attrib, 0, fcbp);	//构成全路径且去掉“..”存于temppath中
-	ii_uof = Check_UOF(temppath);			//查UOF
+	FindPath(comd[1], attrib, 0, fcbp); //构成全路径且去掉“..”存于temppath中
+	ii_uof = Check_UOF(temppath);		//查UOF
 	if (ii_uof == S)
 	{
 		cout << "\n文件" << temppath << "未打开或不存在，不能写文件。\n";
 		return -2;
 	}
 	if (uof[ii_uof].attr & '\01' && uof[ii_uof].state != 1)
-	{	//只读文件不是创建状态不能写
-		cout << "\n" << temppath << "是只读文件，不能写。\n";
+	{ //只读文件不是创建状态不能写
+		cout << "\n"
+			<< temppath << "是只读文件，不能写。\n";
 		return -3;
 	}
 	if (k == 1)
-		pos = uof[ii_uof].writep;	//从写指针所指位置开始写(write <文件名>)
-	else		//k=2或3
+		pos = uof[ii_uof].writep; //从写指针所指位置开始写(write <文件名>)
+	else						  //k=2或3
 	{
 		if (_strnicmp(comd[2], "app", 3) == 0)
-			pos = uof[ii_uof].fsize + 1;	//文件尾部添加模式(write <文件名> append)
+			pos = uof[ii_uof].fsize + 1; //文件尾部添加模式(write <文件名> append)
 		else if (_strnicmp(comd[2], "ins", 3) == 0)
 		{
-			pos = uof[ii_uof].writep;	//从当前写指针位置开始写
-			ins = 1;					//插入模式(write <文件名> insert)
+			pos = uof[ii_uof].writep; //从当前写指针位置开始写
+			ins = 1;				  //插入模式(write <文件名> insert)
 		}
 		else
 		{
-			pos = atoi(comd[2]);		//从命令中指定位置写(write <文件名> <n>)
+			pos = atoi(comd[2]); //从命令中指定位置写(write <文件名> <n>)
 			if (pos <= 0)
 			{
 				cout << "\n命令中提供的写入位置错误。\n";
@@ -1314,7 +1360,7 @@ int WriteComd(int k)		//write命令的处理函数
 			if (k == 3)
 			{
 				if (_strnicmp(comd[3], "ins", 3) == 0)
-					ins = 1;			//插入模式(write <文件名> <n> insert)
+					ins = 1; //插入模式(write <文件名> <n> insert)
 				else
 				{
 					cout << "\n命令参数" << comd[2] << "," << comd[3] << "错误\n";
@@ -1331,22 +1377,22 @@ int WriteComd(int k)		//write命令的处理函数
 	if (pos >= uof[ii_uof].fsize + 1)
 	{
 		pos = uof[ii_uof].fsize + 1;
-		ins = 0;						//这种情况不会是插入方式
+		ins = 0; //这种情况不会是插入方式
 	}
 
-	pos--;							//使pos从0开始
+	pos--; //使pos从0开始
 
 	cout << "\n请输入写入文件的内容(最多允许输入" << sizeof(Buffer) - 1 << "个字节)：\n";
 	cin.getline(Buffer, BSIZE);
 	len1 = strlen(Buffer);
-	if (len1 == 0)			//输入长度为0,不改变文件
+	if (len1 == 0) //输入长度为0,不改变文件
 		return 0;
 	fcbp = uof[ii_uof].fp;
-	len0 = uof[ii_uof].fsize;				//取文件原来的长度值
-	if (len0 == 0)						//若是空文件
+	len0 = uof[ii_uof].fsize; //取文件原来的长度值
+	if (len0 == 0)			  //若是空文件
 	{
 		ii = buffer_to_file(fcbp, Buffer);
-		if (ii == 0)	//写文件失败
+		if (ii == 0) //写文件失败
 			return ii;
 		uof[ii_uof].fsize = uof[ii_uof].fp->Fsize;
 		uof[ii_uof].faddr = uof[ii_uof].fp->Addr;
@@ -1355,9 +1401,9 @@ int WriteComd(int k)		//write命令的处理函数
 		return 1;
 	}
 	//以下处理文件非空的情况
-	len = len1 + pos + ins * (len0 - pos);		//计算写入完成后文件的长度
-	bn0 = len0 / SIZE + (short)(len0 % SIZE > 0);	//文件原来占用的盘块数
-	bn1 = len / SIZE + (short)(len % SIZE > 0);		//写入后文件将占用的盘块数
+	len = len1 + pos + ins * (len0 - pos);		  //计算写入完成后文件的长度
+	bn0 = len0 / SIZE + (short)(len0 % SIZE > 0); //文件原来占用的盘块数
+	bn1 = len / SIZE + (short)(len % SIZE > 0);   //写入后文件将占用的盘块数
 	if (FAT[0] < bn1 - bn0)
 	{
 		cout << "\n磁盘空间不足,不能写入文件.\n";
@@ -1369,17 +1415,17 @@ int WriteComd(int k)		//write命令的处理函数
 		cout << "\n分配内存失败。\n";
 		return -1;
 	}
-	file_to_buffer(fcbp, buf);		//文件读到buf
-	if (ins)	//若是插入方式
+	file_to_buffer(fcbp, buf); //文件读到buf
+	if (ins)				   //若是插入方式
 	{
 		for (ii = len0; ii >= pos; ii--)
-			buf[ii + len1] = buf[ii];	//后移,空出后插入Buffer
+			buf[ii + len1] = buf[ii]; //后移,空出后插入Buffer
 		jj = pos;
 		ii = 0;
-		while (Buffer[ii] != '\0')		//Buffer插入到buf
+		while (Buffer[ii] != '\0') //Buffer插入到buf
 			buf[jj++] = Buffer[ii++];
 	}
-	else		//若是改写方式
+	else //若是改写方式
 		strcpy(&buf[pos], Buffer);
 	buffer_to_file(fcbp, buf);
 	delete[] buf;
@@ -1391,7 +1437,7 @@ int WriteComd(int k)		//write命令的处理函数
 
 ////////////////////////////////////////////////////////////////
 
-int CloseComd(int k)				//close命令的处理函数：关闭文件 
+int CloseComd(int k) //close命令的处理函数：关闭文件
 {
 	// close <文件名>，若指定文件已打开，则关闭之，即从UOF中删除该文件
 	// 对应的表项。若文件未打开或文件不存在，分别给出有关信息。
@@ -1404,16 +1450,16 @@ int CloseComd(int k)				//close命令的处理函数：关闭文件
 		cout << "\n命令中缺少文件名。\n";
 		return -1;
 	}
-	FindPath(comd[1], attrib, 0, p);	//构成全路径且去掉“..”存于temppath中
-	i_uof = Check_UOF(temppath);		//查UOF
+	FindPath(comd[1], attrib, 0, p); //构成全路径且去掉“..”存于temppath中
+	i_uof = Check_UOF(temppath);	 //查UOF
 	if (i_uof == S)
 		cout << "\n文件" << temppath << "未打开或不存在，不能关闭。\n";
 	else
 	{
-		uof[i_uof].state = 0;			//在UOF中清除该文件登记栏
-		p = uof[i_uof].fp;			//取该文件的目录项位置指针
-		p->Addr = uof[i_uof].faddr;	//保存文件的首块号
-		p->Fsize = uof[i_uof].fsize;	//保存文件的大小
+		uof[i_uof].state = 0;		 //在UOF中清除该文件登记栏
+		p = uof[i_uof].fp;			 //取该文件的目录项位置指针
+		p->Addr = uof[i_uof].faddr;  //保存文件的首块号
+		p->Fsize = uof[i_uof].fsize; //保存文件的大小
 		cout << "\n关闭文件" << temppath << "成功。\n";
 	}
 	return 1;
@@ -1421,20 +1467,20 @@ int CloseComd(int k)				//close命令的处理函数：关闭文件
 
 /////////////////////////////////////////////////////////////////
 
-void CloseallComd(int disp)    //closeall命令，关闭当前用户的所有文件
+void CloseallComd(int disp) //closeall命令，关闭当前用户的所有文件
 {
 	int i_uof, j, k;
 	FCB* p;
 	for (k = i_uof = 0; i_uof < S; i_uof++)
 	{
-		j = uof[i_uof].state;	//UOF中状态>0为有效登记项
+		j = uof[i_uof].state; //UOF中状态>0为有效登记项
 		if (j > 0)
 		{
-			k++;  //已打开文件计数
-			uof[i_uof].state = 0;			//在UOF中清除该文件登记栏
-			p = uof[i_uof].fp;			//取该文件的目录项位置指针
-			p->Addr = uof[i_uof].faddr;	//保存文件的首块号
-			p->Fsize = uof[i_uof].fsize;	//保存文件的大小
+			k++;						 //已打开文件计数
+			uof[i_uof].state = 0;		 //在UOF中清除该文件登记栏
+			p = uof[i_uof].fp;			 //取该文件的目录项位置指针
+			p->Addr = uof[i_uof].faddr;  //保存文件的首块号
+			p->Fsize = uof[i_uof].fsize; //保存文件的大小
 			cout << "\n文件" << uof[i_uof].fname << "已关闭.\n";
 		}
 	}
@@ -1453,7 +1499,7 @@ short int SAVE_bn(short bb)
 	// 在udtab中存储被删除文件的块号
 
 	short i = 0, b0, b, bs;
-	if (bb == 0)		//被删除文件是空文件
+	if (bb == 0) //被删除文件是空文件
 		return bb;
 	bs = getblock();
 	short* pb = (short*)Disk[bs];
@@ -1484,13 +1530,13 @@ void Del1Ud(short a)
 	short i, b, b0;
 	b = udtab[a].fb;
 	while (b > 0)
-	{	//回收存储文件块号的磁盘空间
+	{ //回收存储文件块号的磁盘空间
 		b0 = b;
 		b = FAT[b];
 		FAT[b0] = 0;
 		FAT[0]++;
 	}
-	for (i = a; i < Udelp - 1; i++)		//udtab表中表项前移一个位置
+	for (i = a; i < Udelp - 1; i++) //udtab表中表项前移一个位置
 		udtab[i] = udtab[i + 1];
 	Udelp--;
 }
@@ -1503,9 +1549,9 @@ int PutUdtab(FCB* fp)
 
 	short bb, bn, n, m, size;
 	size = fp->Fsize;
-	bn = size / SIZE + (size % SIZE > 0) + 1;	//文件的盘块号个数(含-1)
-	n = SIZE / sizeof(short);			//每个盘块可存储的盘块号数
-	m = bn / n + (short)(bn % n > 0);			//共需m个盘块存储文件的块号
+	bn = size / SIZE + (size % SIZE > 0) + 1; //文件的盘块号个数(含-1)
+	n = SIZE / sizeof(short);				  //每个盘块可存储的盘块号数
+	m = bn / n + (short)(bn % n > 0);		  //共需m个盘块存储文件的块号
 	if (Udelp == DM)
 		Del1Ud(0);
 	if (m > FAT[0])
@@ -1516,14 +1562,14 @@ int PutUdtab(FCB* fp)
 	strcpy(udtab[Udelp].gpath, temppath);
 	strcpy(udtab[Udelp].ufname, fp->FileName);
 	bb = udtab[Udelp].ufaddr = fp->Addr;
-	udtab[Udelp].fb = SAVE_bn(bb);	//保存被删除文件的盘块号
-	Udelp++;						//调整指针位置
+	udtab[Udelp].fb = SAVE_bn(bb); //保存被删除文件的盘块号
+	Udelp++;					   //调整指针位置
 	return 1;
 }
 
 /////////////////////////////////////////////////////////////////
 
-int DelComd(int k)			//del(删除文件)命令处理函数
+int DelComd(int k) //del(删除文件)命令处理函数
 {
 	// 删除文件：del <文件名>，删除指定的文件，即清除其目录项和回收
 	// 其所占用磁盘空间。对于只读文件，删除前应询问用户，得到同意后
@@ -1535,17 +1581,19 @@ int DelComd(int k)			//del(删除文件)命令处理函数
 	short i, s0, s;
 	char yn, attr;
 	char attrib = '\0', * FileName;
-	char gFileName[PATH_LEN];	//存放文件全路径名
+	char gFileName[PATH_LEN]; //存放文件全路径名
 	FCB* fcbp;
 	bool matchAll = false;
 	char ch = '\0';
 
-	s0 = ProcessPath(comd[1], FileName, k, 1, '\20');//取FileName所在目录的首块号
-	if (strcmp(FileName, "*") == 0) {//通配符
+	s0 = ProcessPath(comd[1], FileName, k, 1, '\20'); //取FileName所在目录的首块号
+	if (strcmp(FileName, "*") == 0)
+	{ //通配符
 		matchAll = true;
-	}else	if (s0 < 1)			//路径错误
-		return s0;		//失败，返回
-	s = FindFCB(FileName, s0, attrib, fcbp);		//取FileName的首块号(查其存在性)
+	}
+	else if (s0 < 1)						 //路径错误
+		return s0;							 //失败，返回
+	s = FindFCB(FileName, s0, attrib, fcbp); //取FileName的首块号(查其存在性)
 	if (s < 0 && matchAll == false)
 	{
 		cout << "\n要删除的文件不存在。\n";
@@ -1553,16 +1601,18 @@ int DelComd(int k)			//del(删除文件)命令处理函数
 	}
 	//////////////////////////////////////////////////////////
 	FCB* tmp = (FCB*)Disk[s0];
-	do {
+	do
+	{
 		if (matchAll == true)
 			fcbp = tmp;
-		for (i = 0; i < 4; i++, fcbp++) {
-			ch = fcbp->FileName[0];	//取文件(目录)名的第一个字符
-			if (ch == (char)0xe5)		//空目录项
+		for (i = 0; i < 4; i++, fcbp++)
+		{
+			ch = fcbp->FileName[0]; //取文件(目录)名的第一个字符
+			if (ch == (char)0xe5)   //空目录项
 				continue;
-			if (ch == '\0')		//已至目录尾部
+			if (ch == '\0') //已至目录尾部
 				break;
-			if (fcbp->Fattrib >= '\20')	//是子目录跳过子目录
+			if (fcbp->Fattrib >= '\20') //是子目录跳过子目录
 			{
 				continue;
 			}
@@ -1571,9 +1621,9 @@ int DelComd(int k)			//del(删除文件)命令处理函数
 			if (temppath[i - 1] != '/')
 				strcat(gFileName, "/");
 			FileName = fcbp->FileName;
-			strcat(gFileName, FileName);	//构造文件的全路径名
-			i = Check_UOF(gFileName);		//查UOF
-			if (i < S)					//该文件已在UOF中
+			strcat(gFileName, FileName); //构造文件的全路径名
+			i = Check_UOF(gFileName);	//查UOF
+			if (i < S)					 //该文件已在UOF中
 			{
 				cout << "\n文件" << gFileName << "正在使用，不能删除!\n";
 				return -3;
@@ -1584,25 +1634,26 @@ int DelComd(int k)			//del(删除文件)命令处理函数
 				cout << "\n文件" << gFileName << "是只读文件，你确定要删除它吗？(y/n) ";
 				cin >> yn;
 				if (yn != 'Y' && yn != 'y')
-					return 0;		//不删除，返回
+					return 0; //不删除，返回
 			}
-			i = PutUdtab(fcbp);		//被删除文件的有关信息保存到udtab表中
-			if (i < 0)				//因磁盘空间不足，不能保存被删除文件的信息
+			i = PutUdtab(fcbp); //被删除文件的有关信息保存到udtab表中
+			if (i < 0)			//因磁盘空间不足，不能保存被删除文件的信息
 			{
 				cout << "\n你是否仍要删除文件 " << gFileName << " ? (y/n) : ";
 				cin >> yn;
 				if (yn == 'N' || yn == 'n')
-					return 0;				//不删除返回
+					return 0; //不删除返回
 			}
-			fcbp->FileName[0] = (char)0xe5;	//删除目录项
-			while (s > 0)						//回收磁盘空间
+			fcbp->FileName[0] = (char)0xe5; //删除目录项
+			while (s > 0)					//回收磁盘空间
 			{
 				s0 = s;
 				s = FAT[s];
 				FAT[s0] = 0;
 				FAT[0]++;
 			}
-			if (matchAll == false)break;
+			if (matchAll == false)
+				break;
 		}
 		s0 = FAT[s0];
 	} while (s0 > 0 && ch != '\0' && matchAll == true);
@@ -1627,8 +1678,7 @@ int Udfile(FCB* fdp, short s0, char* fn, short& cc)
 
 	for (i = 0; i < Udelp; i++)
 	{
-		if (strcmp(udtab[i].gpath, temppath) == 0 && strcmp(&udtab[i].ufname[1], fn) == 0
-			&& udtab[i].ufaddr == fdp->Addr)
+		if (strcmp(udtab[i].gpath, temppath) == 0 && strcmp(&udtab[i].ufname[1], fn) == 0 && udtab[i].ufaddr == fdp->Addr)
 		{
 			cout << "\n文件" << udtab[i].ufname << "可能可以恢复，是否恢复它？(y/n) ";
 			cin.getline(yn, 10);
@@ -1636,19 +1686,19 @@ int Udfile(FCB* fdp, short s0, char* fn, short& cc)
 			{
 				if (udtab[i].ufaddr > 0)
 				{
-					b = udtab[i].fb;			//取存储被删文件盘块号的第一个块号
-					stp = (short*)Disk[b];	//stp指向该盘块
-					b0 = stp[0];				//取被删除文件的第一个块号到b0
+					b = udtab[i].fb;		//取存储被删文件盘块号的第一个块号
+					stp = (short*)Disk[b]; //stp指向该盘块
+					b0 = stp[0];			//取被删除文件的第一个块号到b0
 					j = 1;
 					while (b0 > 0)
 					{
-						if (FAT[b0] != 0)		//若被删除文件的盘块已经不空闲
+						if (FAT[b0] != 0) //若被删除文件的盘块已经不空闲
 						{
 							cout << "\n文件" << udtab[i].ufname << "已不能恢复。\n";
-							Del1Ud(i);		//删除udtab表中第i项(该表项已无用)
+							Del1Ud(i); //删除udtab表中第i项(该表项已无用)
 							return -1;
 						}
-						b0 = stp[j++];		//取被删除文件的下一个块号到b0
+						b0 = stp[j++]; //取被删除文件的下一个块号到b0
 						if (j == SIZE / 2 && b0 != -1)
 						{
 							b = FAT[b];
@@ -1676,29 +1726,29 @@ int Udfile(FCB* fdp, short s0, char* fn, short& cc)
 					}
 				}
 				s = FindFCB(udtab[i].ufname, s0, '\0', fcbp);
-				fdp->FileName[0] = udtab[i].ufname[0];	//恢复文件名
-				if (s >= 0)	//有重名文件
+				fdp->FileName[0] = udtab[i].ufname[0]; //恢复文件名
+				if (s >= 0)							   //有重名文件
 				{
 					cout << "\n该目录中已经存在名为" << udtab[i].ufname << "的文件，"
 						<< "请为被恢复文件输入一个新的名字：";
 					while (1)
 					{
 						cin.getline(Fname, INPUT_LEN);
-						if (IsName(Fname))	//若输入的名字符合规则
+						if (IsName(Fname)) //若输入的名字符合规则
 						{
-							s = FindFCB(Fname, s0, '\0', fcbp);	//查输入名字有否重名
+							s = FindFCB(Fname, s0, '\0', fcbp); //查输入名字有否重名
 							if (s >= 0)
 								cout << "\n输入的文件名发生重名冲突。\n请重新输入文件名：";
 							else
-								break;			//输入名字合法且无重名文件存在。退出循环
+								break; //输入名字合法且无重名文件存在。退出循环
 						}
-						else					//输入名字不符合命名规则
+						else //输入名字不符合命名规则
 							cout << "\n输入的文件名不合法。\n请重新输入文件名：";
 					}
 					strcpy(fdp->FileName, Fname);
 				}
-				cc++;		//被恢复文件数增1
-				Del1Ud(i);	//删除udtab表中第i项
+				cc++;	  //被恢复文件数增1
+				Del1Ud(i); //删除udtab表中第i项
 			}
 		}
 	}
@@ -1707,7 +1757,7 @@ int Udfile(FCB* fdp, short s0, char* fn, short& cc)
 
 /////////////////////////////////////////////////////////////////
 
-int UndelComd(int k)		//undel命令
+int UndelComd(int k) //undel命令
 {
 	// 命令形式：undel [<目录名>]
 	// 命令功能：恢复指定目录中被删除的文件
@@ -1715,7 +1765,7 @@ int UndelComd(int k)		//undel命令
 	//		undel——恢复当前目录中被删除的文件
 	//		undel <目录名>——恢复指定目录中被删除的文件
 
-	short i, s, s0, cc = 0;		//cc是恢复文件计数变量
+	short i, s, s0, cc = 0; //cc是恢复文件计数变量
 	char* fn;
 	FCB* fcbp1;
 	if (k > 1)
@@ -1723,7 +1773,7 @@ int UndelComd(int k)		//undel命令
 		cout << "\n命令不能有参数。\n";
 		return -1;
 	}
-	if (k < 1)		//若命令中无参数
+	if (k < 1) //若命令中无参数
 	{
 		strcpy(temppath, curpath.cpath);
 		s0 = s = curpath.fblock;
@@ -1737,18 +1787,18 @@ int UndelComd(int k)		//undel命令
 			return -2;
 		}
 	}
-	while (s > 0)			//在首块号为s的目录找被删除文件的表项，直到目录尾部
+	while (s > 0) //在首块号为s的目录找被删除文件的表项，直到目录尾部
 	{
 		fcbp1 = (FCB*)Disk[s];
 		for (i = 0; i < 4; i++, fcbp1++)
 		{
-			if (fcbp1->FileName[0] == (char)0xe5)		//找到可能进行删除恢复的目录项
+			if (fcbp1->FileName[0] == (char)0xe5) //找到可能进行删除恢复的目录项
 			{
 				fn = &(fcbp1->FileName[1]);
 				Udfile(fcbp1, s0, fn, cc);
 			}
 		}
-		s = FAT[s];	//取下一个盘块号
+		s = FAT[s]; //取下一个盘块号
 	}
 	cout << "\n共恢复了 " << cc << " 个被删除的文件。\n";
 	return 1;
@@ -1756,7 +1806,7 @@ int UndelComd(int k)		//undel命令
 
 /////////////////////////////////////////////////////////////////
 
-int ReadComd(int k)		//read命令的处理函数：读文件 
+int ReadComd(int k) //read命令的处理函数：读文件
 {
 	// 读文件：read <文件名> [<位置m> [<字节数n>]，从已打开的文件读文件内容并显示。若无
 	// “位置”参数，则从读指针所指位置开始读。若有"位置"参数，则从指定位置处开始读。位
@@ -1775,13 +1825,13 @@ int ReadComd(int k)		//read命令的处理函数：读文件
 	char Buffer[SIZE + 1];
 	FCB* fcbp;
 
-	if (k < 1 || k>3)
+	if (k < 1 || k > 3)
 	{
 		cout << "\n命令中参数个数太多或太少。\n";
 		return -1;
 	}
-	FindPath(comd[1], attrib, 0, fcbp);	//构成全路径且去掉“..”存于temppath中
-	i_uof = Check_UOF(temppath);			//查UOF
+	FindPath(comd[1], attrib, 0, fcbp); //构成全路径且去掉“..”存于temppath中
+	i_uof = Check_UOF(temppath);		//查UOF
 	if (i_uof == S)
 	{
 		cout << "\n文件" << temppath << "未打开或不存在，不能读文件。\n";
@@ -1792,25 +1842,25 @@ int ReadComd(int k)		//read命令的处理函数：读文件
 		cout << "\n文件" << temppath << "是空文件。\n";
 		return 1;
 	}
-	if (k == 1)				//参数个数k=1的情况(无参数m和n)
+	if (k == 1) //参数个数k=1的情况(无参数m和n)
 	{
-		pos = uof[i_uof].readp;//从读指针所指位置开始读
+		pos = uof[i_uof].readp; //从读指针所指位置开始读
 		if (pos > uof[i_uof].fsize)
 		{
 			cout << "\n读指针已指向文件尾部，无可读信息。\n";
 			return 1;
 		}
-		readc = uof[i_uof].fsize - pos + 1;	//读到文件尾部共需读readc个字节
+		readc = uof[i_uof].fsize - pos + 1; //读到文件尾部共需读readc个字节
 	}
-	else					//k=2或k=3的情况
+	else //k=2或k=3的情况
 	{
-		pos = atoi(comd[2]);		//从命令中指定位置写
+		pos = atoi(comd[2]); //从命令中指定位置写
 		if (pos <= 0 || pos > uof[i_uof].fsize)
 		{
 			cout << "\n命令中提供的读位置错误。\n";
 			return -3;
 		}
-		readc = uof[i_uof].fsize - pos + 1;	//读到文件尾部共需读readc个字节
+		readc = uof[i_uof].fsize - pos + 1; //读到文件尾部共需读readc个字节
 		if (k == 3)
 		{
 			readc = atoi(comd[3]);
@@ -1823,16 +1873,16 @@ int ReadComd(int k)		//read命令的处理函数：读文件
 				readc = uof[i_uof].fsize - pos + 1;
 		}
 	}
-	bnum = (pos - 1) / SIZE;		//从文件的第bnum块读(bnum从0开始编号)
-	offset = (pos - 1) % SIZE;	//在第bnum块的偏移位置offset处开始读(offset从0开始)
-	b = uof[i_uof].faddr;		//取文件首块号
-	for (i = 0; i < bnum; i++)	//寻找读入的第一个盘块号
+	bnum = (pos - 1) / SIZE;   //从文件的第bnum块读(bnum从0开始编号)
+	offset = (pos - 1) % SIZE; //在第bnum块的偏移位置offset处开始读(offset从0开始)
+	b = uof[i_uof].faddr;	  //取文件首块号
+	for (i = 0; i < bnum; i++) //寻找读入的第一个盘块号
 	{
 		b0 = b;
 		b = FAT[b];
 	}
 	ii = offset;
-	while (count < readc)		//读文件至Buffer并显示之
+	while (count < readc) //读文件至Buffer并显示之
 	{
 		for (i = ii, j = 0; i < SIZE; i++, j++)
 		{
@@ -1847,18 +1897,19 @@ int ReadComd(int k)		//read命令的处理函数：读文件
 		Buffer[j] = '\0';
 		cout << Buffer;
 		ii = 0;
-		b = FAT[b];		//准备读下一个盘块
+		b = FAT[b]; //准备读下一个盘块
 	}
 	cout << endl;
-	uof[i_uof].readp = pos + readc;	//调整读指针
+	uof[i_uof].readp = pos + readc; //调整读指针
 	return 1;
 }
 
 /////////////////////////////////////////////////////////////////
 
-int CopyComd(int k)		//copy命令的处理函数：复制文件 
-{		// 通配符: 搞定	Alkane 2019/12/6
-		// 修复不能 copy <filename> .. 和copy <filename> / 的错误 Alkane 2019/12/11
+int CopyComd(int k) //copy命令的处理函数：复制文件
+{					// 通配符: 搞定	Alkane 2019/12/6
+	// 修复不能 copy <filename> .. 和copy <filename> / 的错误 Alkane 2019/12/11
+	// 增加	合并复制 Alkane 2019/12/18
 	// 复制文件：copy <源文件名> [<目标文件名>]
 	// 命令功能：为目标文件建立目录项，分配新的盘块，并将源文件的内容复制到目标文件中
 	// 和其他命令一样，这里的“文件名”，是指最后一个名字是文件的路径名。
@@ -1882,45 +1933,51 @@ int CopyComd(int k)		//copy命令的处理函数：复制文件
 	// 学生还可考虑使用通配符的多文件同名复制的情况(目标文件与源文件所在目录必须不同)。
 
 	short int i, size, s01, s02, s1, s2, s22, b, b0, bnum;
-	char attrib = '\0', * FileName1, * FileName2;
-	char gFileName[PATH_LEN];	//存放文件全路径名
+	//虽然不知道为什么要叫这个名字，但还是用它来描述fileName3的块号
+	short int s03, s3, s33;
+	char attrib = '\0', * FileName1, * FileName2, * FileName3;
+	char gFileName[PATH_LEN]; //存放文件全路径名
 	bool matchAll = false;
 	char ch;
-	//flag1 := .. 是否为FileName2  flag2 := / 是否为FileName2
-	bool flag1 = false, flag2 = false;
-	FCB* fcbp, * fcbp1, * fcbp2;
+	//flag1 := .. 是否为FileName2  flag2 := / 是否为FileName2	flag3 := /是否为FileName3
+	bool flag1 = false, flag2 = false, flag3 = false;
+	FCB* fcbp, * fcbp1, * fcbp2, * fcbp3;
 	//是否覆盖同名文件
 	bool coverSameName = false;
-	if (k < 1 || k>2)
+	if (k < 1 || k > 4)
 	{
 		cout << "\n命令中参数太多或太少。\n";
 		return -1;
 	}
-	s01 = ProcessPath(comd[1], FileName1, k, 0, '\20');//取FileName所在目录的首块号
-	if (strcmp(FileName1, "*")==0) {// copy * [~]出现了通配符
+	s01 = ProcessPath(comd[1], FileName1, k, 0, '\20'); //取FileName所在目录的首块号
+	if (strcmp(FileName1, "*") == 0)
+	{ // copy * [~]出现了通配符
 		matchAll = true;
 	}
-	else if (s01 < 1)			//路径错误
-		return s01;		//失败，返回
-	s1 = FindFCB(FileName1, s01, attrib, fcbp);	//取FileName(源文件)的首块号(查其存在性)
+	else if (s01 < 1)							//路径错误
+		return s01;								//失败，返回
+	s1 = FindFCB(FileName1, s01, attrib, fcbp); //取FileName(源文件)的首块号(查其存在性)
 	if (s1 < 0 && matchAll == false)
 	{
 		cout << "\n要复制的文件不存在。\n";
 		return -1;
 	}
 	//////////////////////////////////////////////////////
-	do {	//开始通配符的情况
-	    fcbp1 = (FCB*)Disk[s01];
-		for (i = 0; i < 4; i++, fcbp1++) {
-			if (matchAll == false) {	//普通情况，不出现通配符
-				fcbp1 = fcbp;			//记下源文件目录项指针值
+	do
+	{ //开始通配符的情况
+		fcbp1 = (FCB*)Disk[s01];
+		for (i = 0; i < 4; i++, fcbp1++)
+		{
+			if (matchAll == false)
+			{				  //普通情况，不出现通配符
+				fcbp1 = fcbp; //记下源文件目录项指针值
 			}
-			ch = fcbp1->FileName[0];	//取文件(目录)名的第一个字符
-			if (ch == (char)0xe5)		//空目录项
+			ch = fcbp1->FileName[0]; //取文件(目录)名的第一个字符
+			if (ch == (char)0xe5)	//空目录项
 				continue;
-			if (ch == '\0')		//已至目录尾部
+			if (ch == '\0') //已至目录尾部
 				break;
-			if (fcbp1->Fattrib >= '\20')	//是子目录跳过子目录
+			if (fcbp1->Fattrib >= '\20') //是子目录跳过子目录
 			{
 				continue;
 			}
@@ -1929,23 +1986,25 @@ int CopyComd(int k)		//copy命令的处理函数：复制文件
 			i = strlen(temppath);
 			if (temppath[i - 1] != '/')
 				strcat(gFileName, "/");
-			strcat(gFileName, FileName1);	//构造文件的全路径名
-			i = Check_UOF(gFileName);			//查UOF
-			if (i < S)						//该文件已在UOF中
+			strcat(gFileName, FileName1); //构造文件的全路径名
+			i = Check_UOF(gFileName);	 //查UOF
+			if (i < S)					  //该文件已在UOF中
 			{
 				cout << "\n文件" << gFileName << "已经打开，不能复制!\n";
 				return -2;
 			}
-			if (k == 1)		//命令中无目标文件,同名复制到当前目录
+			if (k == 1) //命令中无目标文件,同名复制到当前目录
 			{
-				s02 = curpath.fblock;	//取当前目录的首块号
+				s02 = curpath.fblock; //取当前目录的首块号
 				FileName2 = FileName1;
 			}
-			else	//k=2(命令中提供目标文件)的情况
+			else if (k == 2) //k=2(命令中提供目标文件)的情况
 			{
-				s02 = ProcessPath(comd[2], FileName2, k, 0, '\20');//取FileName2所在目录的首块号
-				if (strcmp(comd[2], "/") == 0) {
-					if (strcmp(curpath.cpath, "/") == 0) {//当前处于根目录下
+				s02 = ProcessPath(comd[2], FileName2, k, 0, '\20'); //取FileName2所在目录的首块号
+				if (strcmp(comd[2], "/") == 0)
+				{
+					if (strcmp(curpath.cpath, "/") == 0)
+					{ //当前处于根目录下
 						cout << "\n当前目录无父目录\n";
 						return -2;
 					}
@@ -1953,126 +2012,288 @@ int CopyComd(int k)		//copy命令的处理函数：复制文件
 					strcpy(FileName2, FileName1);
 					s02 = 1;
 				}
-				else	if (s02 < 1)			//目标路径错误
+				else if (s02 < 1) //目标路径错误
 					return s02;
 				flag1 = strcmp(FileName2, "..") == 0;
 			}
-			if (!IsName(FileName2))	//若名字不符合规则
-			{//这里考虑了出现 copy <filename> .. 的情况
-				if (flag1) {//FileName2 是.. 
-					if (strcmp(curpath.cpath, "/") == 0) {//当前处于根目录下
+			else
+			{ //k=3 or k=4 开始合并复制
+				if ((strcmp(comd[2], "+") != 0))
+				{ // 命令不是 copy <fileName1> + <fileName> + [obj] 的形式,报错
+					cout << "\n命令格式错误\n";
+					return -10086;
+				}
+				s02 = ProcessPath(comd[3], FileName2, k, 0, '\20'); //取FileName2所在目录的首块号
+				if (s02 < 1)										//目标路径错误
+					return s02;
+			}
+			if (!IsName(FileName2)) //若名字不符合规则
+			{						//这里考虑了出现 copy <filename> .. 的情况
+				if (flag1)
+				{ //FileName2 是..
+					if (strcmp(curpath.cpath, "/") == 0)
+					{ //当前处于根目录下
 						cout << "\n当前目录无父目录\n";
 						return -2;
 					}
 				}
-				else {
-				cout << "\n命令中的目标文件名错误。\n";
-				return -2;
-				}
-			}
-			s2 = FindFCB(FileName2, s02, '\040', fcbp);	//取FileName2(目标文件)的首块号(查其存在性)
-			if (s2 >= 0 && fcbp->Fattrib <= '\07')	//存在同名目标文件
-			{
-				cout << "\n存在文件与目标文件同名。\n";
-				char ch;
-				cout << "\n是否覆盖同名文件?[Y/N]";
-				cin >> ch;
-				if (!(ch == 'Y' || ch == 'y'))
-					return -3;
-				else {//选择覆盖同名文件
-					s22 = s02; //当作FileName2不存在来处理
-					coverSameName = true;
-				}
-			}
-			if (coverSameName == false) { //FileName2不存在
-				if (s2 < 0)		//FileName2尚不存在，在s02为首块号的目录内复制目标文件
-					s22 = s02;
-				else			//FileName2存在，但它是目录名
+				else
 				{
-					s22 = s2;
-					if (s2 != s01)		//源文件与目标文件不同目录
+					cout << "\n命令中的目标文件名错误。\n";
+					return -2;
+				}
+			}
+			s2 = FindFCB(FileName2, s02, '\040', fcbp2); //取FileName2的首块号(查其存在性)
+			if (k == 2)
+			{											// copy <file1> <file2>
+				if (s2 >= 0 && fcbp2->Fattrib <= '\07') //存在同名目标文件
+				{
+					cout << "\n存在文件与目标文件同名。\n";
+					char ch;
+					cout << "\n是否覆盖同名文件?[Y/N]";
+					cin >> ch;
+					if (!(ch == 'Y' || ch == 'y'))
+						return -3;
+					else
+					{			   //选择覆盖同名文件
+						s22 = s02; //当作FileName2不存在来处理
+						coverSameName = true;
+					}
+				}
+				if (coverSameName == false)
+				{				//FileName2不存在
+					if (s2 < 0) //FileName2尚不存在，在s02为首块号的目录内复制目标文件
+						s22 = s02;
+					else //FileName2存在，但它是目录名
 					{
-						b = FindFCB(FileName1, s2, '\040', fcbp);//需查FileName2目录中有没有文件FileName1
-						if (b >= 0&&fcbp->Fattrib<='\07')
+						s22 = s2;
+						if (s2 != s01) //源文件与目标文件不同目录
 						{
-							cout << "\n目标目录中有同名文件.\n";
+							b = FindFCB(FileName1, s2, '\040', fcbp); //需查FileName2目录中有没有文件FileName1
+							if (b >= 0 && fcbp->Fattrib <= '\07')
+							{
+								cout << "\n目标目录中有同名文件.\n";
+								char ch;
+								cout << "\n是否覆盖同名文件?[Y/N]";
+								cin >> ch;
+								if (!(ch == 'Y' || ch == 'y'))
+									return -4;
+								else
+								{ //选择覆盖同名文件
+									coverSameName = true;
+								}
+							}
+							else if (b >= 0)
+							{ //存在的是同名目录
+								cout << "\n存在同名目录!\n";
+								return -4;
+							}
+							FileName2 = FileName1; //缺省目标文件名，同名复制
+						}
+						else
+						{
+							cout << "\n同目录下有同名文件!\n";
 							char ch;
 							cout << "\n是否覆盖同名文件?[Y/N]";
 							cin >> ch;
 							if (!(ch == 'Y' || ch == 'y'))
-								return -4;
-							else {//选择覆盖同名文件
+								return -5;
+							else
+							{ //选择覆盖同名文件
 								coverSameName = true;
+								FileName2 = FileName1; //缺省目标文件名，同名复制
 							}
 						}
-						else if(b>=0) {//存在的是同名目录
-							cout << "\n存在同名目录!\n";
-							return -4;
-						}
-						FileName2 = FileName1;	//缺省目标文件名，同名复制
+					}
+				}
+				if (coverSameName == false)
+				{ //只有当不覆盖同名文件时才寻找新的FCB
+					i = FindBlankFCB(s22, fcbp2);
+				}
+				else
+				{
+					i = 1;
+					coverSameName = false; //恢复标志位
+					fcbp2 = fcbp;
+				}
+				if (i < 0)
+				{
+					cout << "\n复制文件失败。\n";
+					return i;
+				}
+				size = fcbp1->Fsize;						   //源文件的长度
+				bnum = size / SIZE + (short)(size % SIZE > 0); //计算源文件所占盘块数
+				if (FAT[0] < bnum)
+				{
+					cout << "\n磁盘空间已满，不能复制文件。\n";
+					return -6; //奇怪的-6
+				}
+				*fcbp2 = *fcbp1;					//源文件的目录项复制给目标文件
+				strcpy(fcbp2->FileName, FileName2); //写目标文件名
+				b0 = 0;
+			}
+			else
+			{
+				b0 = 0;
+				if (s2 < 0)
+				{ //FileName2 不存在
+					cout << "\n文件2不存在!\n";
+					return -10088;
+				}
+				else if (s2 >= 0 && fcbp->Fattrib >= 16)
+				{ //FileName2 是目录
+					cout << "\n无法对目录进行合并复制操作!\n";
+					return -10089;
+				}
+				else
+				{ // FileName2 存在，并且为文件
+					if (k == 3)
+					{ //命令中无目标文件,同名复制到当前目录
+						s03 = curpath.fblock;
+						FileName3 = FileName1;
 					}
 					else
+					{														//命令中存在目标文件
+						s03 = ProcessPath(comd[4], FileName3, k, 0, '\20'); //取FileName3所在目录的首块号
+						if (s03 < 1)										//目标路径错误
+							return s03;
+					}
+					if (!IsName(FileName3)) //若名字不符合规则
 					{
-						cout << "\n同目录下有同名文件!\n";
+						cout << "\n命令中的目标文件名错误。\n";
+						return -2;
+					}
+					s3 = FindFCB(FileName3, s03, '\040', fcbp); //取FileName3的首块地址,查其存在性
+					if (s3 >= 0 && fcbp->Fattrib <= '\07')
+					{ //存在同名目标文件
+						cout << "\n存在文件与目标文件同名\n";
 						char ch;
 						cout << "\n是否覆盖同名文件?[Y/N]";
 						cin >> ch;
 						if (!(ch == 'Y' || ch == 'y'))
-							return -5;
-						else {//选择覆盖同名文件
+							return -100;
+						else
+						{
+							s33 = s03; //当FileName3不存在
 							coverSameName = true;
-							FileName2 = FileName1;	//缺省目标文件名，同名复制
 						}
 					}
+					if (coverSameName == false)
+					{
+						if (s3 < 0) //FileName3尚且不存在
+							s33 = s03;
+						else
+						{ //FileName3存在,但它是目录名
+							s33 = s3;
+							if (s3 != s01)
+							{ //源文件与目标文件不同目录
+								b = FindFCB(FileName1, s3, '\040', fcbp);
+								if (b >= 0 && fcbp->Fattrib <= '\07')
+								{
+									cout << "\n目标目录中有同名文件.\n";
+									char ch;
+									cout << "\n是否覆盖同名文件?[Y/N]";
+									cin >> ch;
+									if (!(ch == 'Y' || ch == 'y'))
+										return -4;
+									else
+									{ //选择覆盖同名文件
+										coverSameName = true;
+									}
+								}
+								else if (b >= 0)
+								{ //存在同名目录
+									cout << "\n存在同名目录!\n";
+									return -1000;
+								}
+								FileName3 = FileName1; //缺省目标文件名,同名复制
+							}
+							else
+							{
+								cout << "\n同目录下有同名文件!\n";
+								char ch;
+								cout << "\n是否覆盖同名文件?[Y/N]";
+								cin >> ch;
+								if (!(ch == 'Y' || ch == 'y'))
+									return -5;
+								else
+								{ //选择覆盖同名文件
+									coverSameName = true;
+									FileName3 = FileName1; //缺省目标文件名，同名复制
+								}
+							}
+						}
+					}
+					if (coverSameName == false)
+					{ //只有当不存在同名文件时才寻找空的FCB块
+						i = FindBlankFCB(s33, fcbp3);
+					}
+					else
+					{
+						i = 1;
+						coverSameName = false; //恢复标志位
+						fcbp3 = fcbp;
+					}
+					if (i < 0)
+					{
+						cout << "\n复制文件失败。\n";
+						return -1;
+					}
 				}
+				size = fcbp1->Fsize + fcbp2->Fsize;			   //预计需要的size
+				bnum = size / SIZE + (short)(size % SIZE > 0); //计算源文件所占盘块数
+				if (FAT[0] < bnum)
+				{
+					cout << "\n磁盘空间不足\n";
+					return -1000;
+				}
+				*fcbp3 = *fcbp1;
+				strcpy(fcbp3->FileName, FileName3); //写目标文件名
+				b0 = 0;
 			}
-			if (coverSameName == false) {//只有当不覆盖同名文件时才寻找新的FCB
-				i = FindBlankFCB(s22, fcbp2);
-			}
-			else {
-				i = 1;
-				coverSameName = false; //恢复标志位
-				fcbp2 = fcbp;
-			}
-			if (i < 0)
-			{
-				cout << "\n复制文件失败。\n";
-				return i;
-			}
-			size = fcbp1->Fsize;		//源文件的长度
-			bnum = size / SIZE + (short)(size % SIZE > 0);	//计算源文件所占盘块数
-			if (FAT[0] < bnum)
-			{
-				cout << "\n磁盘空间已满，不能复制文件。\n";
-				return -6;//奇怪的-6
-			}
-			*fcbp2 = *fcbp1;						//源文件的目录项复制给目标文件
-			strcpy(fcbp2->FileName, FileName2);	//写目标文件名
-			b0 = 0;
-			while (s1 > 0)		//开始复制文件内容
-			{//如果源文件的文件长度为0,则不会分配新的盘块,只将源文件的FCB复制一份更名给目标文件
+			if (k <= 2)
+				fcbp = fcbp2;
+			else
+				fcbp = fcbp3;
+
+			while (s1 > 0) //开始复制文件内容
+			{			   //如果源文件的文件长度为0,则不会分配新的盘块,只将源文件的FCB复制一份更名给目标文件
 				b = getblock();
 				if (b0 == 0)
-					fcbp2->Addr = b;		//目标文件的首块号
+					fcbp->Addr = b; //目标文件的首块号
 				else
 					FAT[b0] = b;
-				memcpy(Disk[b], Disk[s1], SIZE);	//复制盘块
-				s1 = FAT[s1];				//准备复制下一个盘块
+				memcpy(Disk[b], Disk[s1], SIZE); //复制盘块
+				s1 = FAT[s1];					 //准备复制下一个盘块
 				b0 = b;
+			}
+			if (k >= 3)
+			{
+				char buffer1[INPUT_LEN];
+				int fsize = file_to_buffer(fcbp, buffer1);
+				char buffer2[INPUT_LEN];
+				fsize += file_to_buffer(fcbp2, buffer2);
+				if (fsize/SIZE > FAT[0]) {
+					cout << "\n磁盘空间不足!\n";
+					return -100;
+				}
+				strcat(buffer1, buffer2);
+				fsize = buffer_to_file(fcbp, buffer1);
 			}
 			if (matchAll == false)
 				return 1;
-			if (ch == '\0') break;
-			s01 = FAT[s01];		//指向该目录的下一个盘块
+			if (ch == '\0')
+				break;
+			s01 = FAT[s01]; //指向该目录的下一个盘块
 		}
 	} while (s01 > 0 && ch != '\0');
-	matchAll = false;//记得最后恢复标志位
-	return 1;					//文件复制成功，返回
+	matchAll = false; //记得最后恢复标志位
+	return 1;		  //文件复制成功，返回
 }
 
 /////////////////////////////////////////////////////////////////
 
-int FseekComd(int k)	//fseek命令的处理函数 
+int FseekComd(int k) //fseek命令的处理函数
 {
 	// 命令形式：fseek <文件名> <n>
 	// 功能：将读、写指针移到指定位置n处
@@ -2087,16 +2308,17 @@ int FseekComd(int k)	//fseek命令的处理函数
 		return -1;
 	}
 	n = atoi(comd[2]);
-	FindPath(comd[1], attrib, 0, fcbp);		//构成全路径且去掉“..”存于temppath中
+	FindPath(comd[1], attrib, 0, fcbp); //构成全路径且去掉“..”存于temppath中
 	i_uof = Check_UOF(temppath);		//查UOF
 	if (i_uof == S)
 	{
 		cout << "\n文件" << temppath << "未打开或不存在，不能操作。\n";
-		return -2;					//操作失败返回
+		return -2; //操作失败返回
 	}
-	if (uof[i_uof].fsize == 0)		//空文件
+	if (uof[i_uof].fsize == 0) //空文件
 	{
-		cout << "\n" << temppath << "是空文件，不能进行此操作。\n";
+		cout << "\n"
+			<< temppath << "是空文件，不能进行此操作。\n";
 		return -3;
 	}
 	if (n <= 0 || n > uof[i_uof].fsize + 1)
@@ -2104,14 +2326,14 @@ int FseekComd(int k)	//fseek命令的处理函数
 		cout << "\n位置参数错误。该参数必须在1和" << uof[i_uof].fsize + 1 << "之间。\n";
 		return -4;
 	}
-	uof[i_uof].readp = n;				//读指针设定为n
-	uof[i_uof].writep = n;			//写指针设定为n
-	return 1;						//修改成功，返回
+	uof[i_uof].readp = n;  //读指针设定为n
+	uof[i_uof].writep = n; //写指针设定为n
+	return 1;			   //修改成功，返回
 }
 
 /////////////////////////////////////////////////////////////////
 
-int RenComd(int k)	//ren命令的处理函数：文件改名
+int RenComd(int k) //ren命令的处理函数：文件改名
 {
 	// 命令形式：ren <原文件名> <新文件名>
 	// 若原文件不存在，给出错误信息。
@@ -2120,12 +2342,12 @@ int RenComd(int k)	//ren命令的处理函数：文件改名
 
 	short i, s0, s;
 	char attrib = '\0', * FileName;
-	char gFileName[PATH_LEN];	//存放文件全路径名
+	char gFileName[PATH_LEN]; //存放文件全路径名
 	FCB* fp, * fcbp;
-	s0 = ProcessPath(comd[1], FileName, k, 2, '\20');//取FileName所在目录的首块号
-	if (s0 < 1)			//路径错误
-		return s0;		//失败，返回
-	s = FindFCB(FileName, s0, attrib, fcbp);		//取FileName的首块号(查其存在性)
+	s0 = ProcessPath(comd[1], FileName, k, 2, '\20'); //取FileName所在目录的首块号
+	if (s0 < 1)										  //路径错误
+		return s0;									  //失败，返回
+	s = FindFCB(FileName, s0, attrib, fcbp);		  //取FileName的首块号(查其存在性)
 	if (s < 0)
 	{
 		cout << "\n要改名的文件不存在。\n";
@@ -2135,21 +2357,21 @@ int RenComd(int k)	//ren命令的处理函数：文件改名
 	i = strlen(temppath);
 	if (temppath[i - 1] != '/')
 		strcat(gFileName, "/");
-	strcat(gFileName, FileName);	//构造文件的全路径名
-	i = Check_UOF(gFileName);		//查UOF
-	if (i < S)					//该文件已在UOF中
+	strcat(gFileName, FileName); //构造文件的全路径名
+	i = Check_UOF(gFileName);	//查UOF
+	if (i < S)					 //该文件已在UOF中
 	{
 		cout << "\n文件" << gFileName << "已经打开，不能改名!\n";
 		return -3;
 	}
 	if (IsName(comd[2]))
 	{
-		fp = fcbp;						//保存指向要改名文件目录项的指针
-		s = FindFCB(comd[2], s0, attrib, fcbp);	//查新文件名是否重名
-		if (s < 0)			//不重名
+		fp = fcbp;								//保存指向要改名文件目录项的指针
+		s = FindFCB(comd[2], s0, attrib, fcbp); //查新文件名是否重名
+		if (s < 0)								//不重名
 		{
 			strcpy(fp->FileName, comd[2]);
-			return 1;		//正确返回
+			return 1; //正确返回
 		}
 		cout << "\n存在与新文件名同名的文件。\n";
 		return -5;
@@ -2160,7 +2382,7 @@ int RenComd(int k)	//ren命令的处理函数：文件改名
 
 /////////////////////////////////////////////////////////////////
 
-int AttribComd(int k)	//attrib命令的处理函数：修改文件或目录属性 
+int AttribComd(int k) //attrib命令的处理函数：修改文件或目录属性
 {
 	// 显示修改文件属性：attrib <文件名> [±<属性>]。若命令中无"文件属性"参数，
 	// 则显示指定文件的属性；若命令中有"文件属性"参数，则修改指定文件的属性。"文
@@ -2177,8 +2399,8 @@ int AttribComd(int k)	//attrib命令的处理函数：修改文件或目录属�
 	short i, j, i_uof, s;
 	char Attrib, attrib = '\40';
 	char Attr[5], Attr1[4] = "RHS";
-	char attr[6][3] = { "+r","+h","+s","-r","-h","-s" };
-	char or_and[6] = { '\01','\02','\04','\036','\035','\033' };
+	char attr[6][3] = { "+r", "+h", "+s", "-r", "-h", "-s" };
+	char or_and[6] = { '\01', '\02', '\04', '\036', '\035', '\033' };
 	FCB* fcbp;
 	char ch = '\0';
 	bool matchAll = false;
@@ -2188,29 +2410,33 @@ int AttribComd(int k)	//attrib命令的处理函数：修改文件或目录属�
 		cout << "\n命令中没有指定文件名。\n";
 		return -1;
 	}
-	s = FindPath(comd[1], attrib, 1, fcbp);	//寻找指定的文件或目录并返回其首块号
-	if (strcmp(comd[1], "*") == 0) {
+	s = FindPath(comd[1], attrib, 1, fcbp); //寻找指定的文件或目录并返回其首块号
+	if (strcmp(comd[1], "*") == 0)
+	{
 		matchAll = true;
 		s = curpath.fblock;
 	}
-	else 	if (s < 0 && matchAll == false)
+	else if (s < 0 && matchAll == false)
 	{
-		cout << '\n' << temppath << "文件或目录不存在。\n";
+		cout << '\n'
+			<< temppath << "文件或目录不存在。\n";
 		return -2;
 	}
 	//////////////////////////////////////////////////////////////////////////
 	FCB* tmp = (FCB*)Disk[s];
-		if (matchAll == true)
-			fcbp = tmp;
-	do {
-		for (i = 0; i < 4; i++, fcbp++) {
-			ch = fcbp->FileName[0];	//取文件(目录)名的第一个字符
-			if (ch == (char)0xe5)		//空目录项
+	if (matchAll == true)
+		fcbp = tmp;
+	do
+	{
+		for (i = 0; i < 4; i++, fcbp++)
+		{
+			ch = fcbp->FileName[0]; //取文件(目录)名的第一个字符
+			if (ch == (char)0xe5)   //空目录项
 				continue;
-			if (ch == '\0')		//已至目录尾部
+			if (ch == '\0') //已至目录尾部
 				break;
 			strcpy(temppath, curpath.cpath);
-			if (k == 1)		//显示文件/目录的属性
+			if (k == 1) //显示文件/目录的属性
 			{
 				Attrib = fcbp->Fattrib & '\07';
 				if (Attrib == '\0')
@@ -2226,17 +2452,18 @@ int AttribComd(int k)	//attrib命令的处理函数：修改文件或目录属�
 					}
 					Attr[i] = '\0';
 				}
-				cout << "\n" << fcbp->FileName << "的属性是：" << Attr << endl;
+				cout << "\n"
+					<< fcbp->FileName << "的属性是：" << Attr << endl;
 			}
-			if (fcbp->Fattrib <= '\07')		//若是文件，要查其是否已被打开
+			if (fcbp->Fattrib <= '\07') //若是文件，要查其是否已被打开
 			{
-				i_uof = Check_UOF(temppath);	//查UOF
+				i_uof = Check_UOF(temppath); //查UOF
 				if (i_uof < S)
 				{
 					cout << "\n文件" << fcbp->FileName << "正打开着，不能修改属性。\n";
 				}
 			}
-			for (i = 2; i <= k; i++)		//处理属性参数
+			for (i = 2; i <= k; i++) //处理属性参数
 			{
 				for (j = 0; j < 6; j++)
 					if (_stricmp(comd[i], attr[j]) == 0)
@@ -2252,16 +2479,17 @@ int AttribComd(int k)	//attrib命令的处理函数：修改文件或目录属�
 					cout << "\n命令中的属性参数错误。\n";
 				}
 			}
-			if (matchAll == false)break;
+			if (matchAll == false)
+				break;
 		}
 		s = FAT[s];
 	} while (s > 0 && (ch != '\0') && matchAll == true);
-	return 1;	//修改属性完成，返回
+	return 1; //修改属性完成，返回
 }
 
 /////////////////////////////////////////////////////////////////
 
-int RewindComd(int k)	//rewind命令的处理函数：读、写指针移到文件开头 
+int RewindComd(int k) //rewind命令的处理函数：读、写指针移到文件开头
 {
 	// 命令形式：rewind <文件名>
 	// 对指定文件操作，同时该文件变为当前操作文件
@@ -2275,24 +2503,24 @@ int RewindComd(int k)	//rewind命令的处理函数：读、写指针移到文�
 		cout << "\n命令参数个数错误。本命令只能有1个参数。\n";
 		return -1;
 	}
-	FindPath(comd[1], attrib, 0, fcbp);		//构成全路径且去掉“..”存于temppath中
+	FindPath(comd[1], attrib, 0, fcbp); //构成全路径且去掉“..”存于temppath中
 	i_uof = Check_UOF(temppath);		//查UOF
 	if (i_uof == S)
 	{
 		cout << "\n文件" << temppath << "未打开或不存在，不能操作。\n";
-		return -1;					//操作失败返回
+		return -1; //操作失败返回
 	}
-	if (uof[i_uof].faddr > 0)			//若是空文件
-		uof[i_uof].readp = 1;			//读指针设定为0
+	if (uof[i_uof].faddr > 0) //若是空文件
+		uof[i_uof].readp = 1; //读指针设定为0
 	else
-		uof[i_uof].readp = 0;			//非空文件的读指针设定为1
-	uof[i_uof].writep = 1;			//文件的写指针设定为1
-	return 1;						// 修改成功，返回
+		uof[i_uof].readp = 0; //非空文件的读指针设定为1
+	uof[i_uof].writep = 1;	//文件的写指针设定为1
+	return 1;				  // 修改成功，返回
 }
 
 /////////////////////////////////////////////////////////////////
 
-void UofComd()	//uof命令，显示当前用户“打开文件表”
+void UofComd() //uof命令，显示当前用户“打开文件表”
 {
 	//显示用户已打开文件表UOF的内容
 
@@ -2308,39 +2536,48 @@ void UofComd()	//uof命令，显示当前用户“打开文件表”
 		for (i = 0; i < S; i++)
 		{
 			if (uof[i].state == 0)
-				continue;					//空目录项
+				continue; //空目录项
 			cout.setf(ios::left);
-			cout << setw(32) << uof[i].fname;	//显示文件名 
+			cout << setw(32) << uof[i].fname; //显示文件名
 			ch = uof[i].attr;
 			switch (ch)
 			{
-			case '\0': cout << "普通    ";
+			case '\0':
+				cout << "普通    ";
 				break;
-			case '\01': cout << "R       ";
+			case '\01':
+				cout << "R       ";
 				break;
-			case '\02': cout << "H       ";
+			case '\02':
+				cout << "H       ";
 				break;
-			case '\03': cout << "RH      ";
+			case '\03':
+				cout << "RH      ";
 				break;
-			case '\04': cout << "S       ";
+			case '\04':
+				cout << "S       ";
 				break;
-			case '\05': cout << "RS      ";
+			case '\05':
+				cout << "RS      ";
 				break;
-			case '\06': cout << "HS      ";
+			case '\06':
+				cout << "HS      ";
 				break;
-			case '\07': cout << "RHS     ";
+			case '\07':
+				cout << "RHS     ";
 				break;
-			default: cout << "错误    ";
+			default:
+				cout << "错误    ";
 			}
-			cout << setw(8) << uof[i].faddr;	//首块号
-			cout << setw(8) << uof[i].fsize;	//文件大小
+			cout << setw(8) << uof[i].faddr; //首块号
+			cout << setw(8) << uof[i].fsize; //文件大小
 			k = uof[i].state;
 			if (k == 1)
-				cout << " 建立   ";			//状态为“建立” 
+				cout << " 建立   "; //状态为“建立”
 			else
-				cout << " 打开   ";			//状态为“打开” 
+				cout << " 打开   "; //状态为“打开”
 			cout << setw(8) << uof[i].readp;
-			cout << uof[i].writep << endl;		//读指针 
+			cout << uof[i].writep << endl; //读指针
 		}
 	}
 	else
@@ -2351,7 +2588,7 @@ void UofComd()	//uof命令，显示当前用户“打开文件表”
   */
   /////////////////////////////////////////////////////////////////
 
-void save_FAT()	//保存文件分配表FAT到磁盘文件FAT.txt
+void save_FAT() //保存文件分配表FAT到磁盘文件FAT.txt
 {
 	int i;
 	ofstream ffo;
@@ -2377,7 +2614,7 @@ void save_Disk() //保存盘块中的文件内容
 
 /////////////////////////////////////////////////////////////////
 
-void save_UdTab()	//保存被删除文件信息表
+void save_UdTab() //保存被删除文件信息表
 {
 	int i;
 	ofstream ffo("UdTab.dat", ios::binary);
@@ -2399,26 +2636,26 @@ int FindFCB(char* Name, int s, char attrib, FCB*& fcbp)
 	while (s > 0)
 	{
 		fcbp = (FCB*)Disk[s];
-		for (i = 0; i < 4; i++, fcbp++)		//每个盘块4个目录项
+		for (i = 0; i < 4; i++, fcbp++) //每个盘块4个目录项
 		{
 			ch = fcbp->FileName[0];
 			if (ch == (char)0xe5)
 				continue;
 			if (ch == '\0')
-				return -1;		//路径错误(至该目录尾部仍未找到)
-			if (strcmp(Name, fcbp->FileName) == 0)	//名字找到
+				return -1;						   //路径错误(至该目录尾部仍未找到)
+			if (strcmp(Name, fcbp->FileName) == 0) //名字找到
 			{
-				if (attrib == '\040')		//attrib为32时，文件、子目录不限
+				if (attrib == '\040') //attrib为32时，文件、子目录不限
 					return fcbp->Addr;
 				Attrib = fcbp->Fattrib;
-				if (attrib == '\020' && Attrib >= attrib)	//子目录属性
+				if (attrib == '\020' && Attrib >= attrib) //子目录属性
 					return fcbp->Addr;
-				if (attrib == '\0' && Attrib <= '\07')		//文件属性(找的是文件)
+				if (attrib == '\0' && Attrib <= '\07') //文件属性(找的是文件)
 					return fcbp->Addr;
-				return -1;			//名字符合但属性不对仍然没有找到
+				return -1; //名字符合但属性不对仍然没有找到
 			}
 		}
-		s = FAT[s];		//取下一个盘块号
+		s = FAT[s]; //取下一个盘块号
 	}
 	return -2;
 }
@@ -2434,24 +2671,24 @@ int FindPath(char* pp, char attrib, int ffcb, FCB*& fcbp)
 	// 引用参数指针变量fcbp指向路径最后一个目录的目录项。
 
 	short i, j, len, s = 0;
-	char paths[60][FILENAME_LEN];	//分解路径用(路径中最多不超过60个名字)
+	char paths[60][FILENAME_LEN]; //分解路径用(路径中最多不超过60个名字)
 	char* q, Name[PATH_LEN];
 
 	strcpy(temppath, "/");
-	if (strcmp(pp, "/") == 0)	//是根目录
-		return 1;			//返回根目录的首块号
-	if (*pp == '/')			//绝对路径，从根目录开始
+	if (strcmp(pp, "/") == 0) //是根目录
+		return 1;			  //返回根目录的首块号
+	if (*pp == '/')			  //绝对路径，从根目录开始
 	{
-		s = 1;				//根目录的首块号
+		s = 1; //根目录的首块号
 		pp++;
 	}
 	else
 	{
-		s = curpath.fblock;	//相对路径，从当前目录开始
+		s = curpath.fblock; //相对路径，从当前目录开始
 		strcpy(temppath, curpath.cpath);
 	}
 	j = 0;
-	while (*pp != '\0')	//对命令中的路径分解
+	while (*pp != '\0') //对命令中的路径分解
 	{
 		for (i = 0; i < PATH_LEN; i++, pp++)
 		{
@@ -2462,15 +2699,16 @@ int FindPath(char* pp, char attrib, int ffcb, FCB*& fcbp)
 				if (i > 0)
 				{
 					Name[i] = '\0';
-					if (i > FILENAME_LEN - 1)	//名字过长则截取前FILENAME_LEN-1个字符
+					if (i > FILENAME_LEN - 1) //名字过长则截取前FILENAME_LEN-1个字符
 						Name[FILENAME_LEN - 1] = '\0';
 					strcpy(paths[j], Name);
 					j++;
 				}
 				else
-					return -1;		//路径错误
-				if (*pp == '/') pp++;
-				break;			//已处理到字符串尾部
+					return -1; //路径错误
+				if (*pp == '/')
+					pp++;
+				break; //已处理到字符串尾部
 			}
 		}
 	}
@@ -2479,10 +2717,11 @@ int FindPath(char* pp, char attrib, int ffcb, FCB*& fcbp)
 		if (strcmp(paths[i], "..") == 0)
 		{
 			if (strcmp(temppath, "/") == 0)
-				return -1;		//路径错误(根目录无父目录)
+				return -1; //路径错误(根目录无父目录)
 			len = strlen(temppath);
 			q = &temppath[len - 1];
-			while (*q != '/') q--;
+			while (*q != '/')
+				q--;
 			*q = '\0';
 			if (*temppath == '\0')
 			{
@@ -2508,14 +2747,14 @@ int FindPath(char* pp, char attrib, int ffcb, FCB*& fcbp)
 
 /////////////////////////////////////////////////////////////////
 
-void FatComd()	//若输入"fat"
+void FatComd() //若输入"fat"
 {
 	cout << "\n当前磁盘剩余空闲块数为" << FAT[0] << endl;
 }
 
 /////////////////////////////////////////////////////////////////
 
-void CheckComd()		//check命令
+void CheckComd() //check命令
 {
 	int j, i;
 	cout << "\n当前磁盘空闲是：" << FAT[0] << endl;
@@ -2530,24 +2769,24 @@ void CheckComd()		//check命令
 
 /////////////////////////////////////////////////////////////////
 
-void ExitComd()		//exit命令处理
+void ExitComd() //exit命令处理
 {
 	char yn;
-	CloseallComd(0);		//关闭所有打开的文件以防数据丢失
+	CloseallComd(0); //关闭所有打开的文件以防数据丢失
 	cout << "\n退出时FAT、Disk、Udtab是否要存盘？(y/n) ";
 	cin >> yn;
 	if (yn == 'Y' || yn == 'y')
 	{
-		save_FAT();			//FAT表存盘
-		save_Disk();		//磁盘块中存储的内容
-		save_UdTab();		//保存被删除文件信息表
+		save_FAT();   //FAT表存盘
+		save_Disk();  //磁盘块中存储的内容
+		save_UdTab(); //保存被删除文件信息表
 	}
 	exit(0);
 }
 
 /////////////////////////////////////////////////////////////////
 
-bool isunname(char ch)		//用于检查名字中是否有非法字符
+bool isunname(char ch) //用于检查名字中是否有非法字符
 {
 	char cc[] = "\"*+,/:;<=>?[\\]| ";
 	for (int i = 0; i < 16; i++)
@@ -2575,9 +2814,9 @@ bool IsName(char* Name)
 	len = strlen(Name);
 	if (len == 0)
 		return false;
-	if (Name[0] == '.')		//名字第一个字符不能是字符'.'
+	if (Name[0] == '.') //名字第一个字符不能是字符'.'
 		return false;
-	if (len > Len)			//若名字过长，截去多余的尾部
+	if (len > Len) //若名字过长，截去多余的尾部
 	{
 		Name[Len] = '\0';
 		len = Len;
@@ -2585,7 +2824,7 @@ bool IsName(char* Name)
 	for (i = 0; i < len; i++)
 	{
 		ch = Name[i];
-		if (isunname(ch))	//若名字中含有不合法符号
+		if (isunname(ch)) //若名字中含有不合法符号
 		{
 			yn = false;
 			break;
@@ -2598,20 +2837,22 @@ bool IsName(char* Name)
 
 /////////////////////////////////////////////////////////////////
 
-void PromptComd(void)			//prompt命令
+void PromptComd(void) //prompt命令
 {
 	dspath = !dspath;
 }
 
 /////////////////////////////////////////////////////////////////
 
-void UdTabComd(void)			//udtab命令
+void UdTabComd(void) //udtab命令
 {
 	//显示删除文件恢复表udtab的内容
 
 	cout << "\n恢复被删除文件信息表(UdTab)内容如下：\n\n";
-	cout << "文件路径名                      " << "文件名        "
-		<< "首块号      " << "存储块号" << endl;
+	cout << "文件路径名                      "
+		<< "文件名        "
+		<< "首块号      "
+		<< "存储块号" << endl;
 	for (int i = 0; i < Udelp; i++)
 		cout << setiosflags(ios::left) << setw(32) << udtab[i].gpath
 		<< setw(15) << udtab[i].ufname << setw(12) << udtab[i].ufaddr
@@ -2620,59 +2861,59 @@ void UdTabComd(void)			//udtab命令
 
 /////////////////////////////////////////////////////////////////
 
-int file_to_buffer(FCB* fcbp, char* Buffer)	//文件内容读到Buffer,返回文件长度
+int file_to_buffer(FCB* fcbp, char* Buffer) //文件内容读到Buffer,返回文件长度
 {
 	//文件内容读到Buffer,返回文件长度
 
 	short s, len, i, j = 0;
 
-	len = fcbp->Fsize;				//取文件长度
-	s = fcbp->Addr;					//取文件首块号
+	len = fcbp->Fsize; //取文件长度
+	s = fcbp->Addr;	//取文件首块号
 	while (s > 0)
 	{
 		for (i = 0; i < SIZE; i++, j++)
 		{
-			if (j >= len)				//已读完该文件
+			if (j >= len) //已读完该文件
 				break;
 			Buffer[j] = Disk[s][i];
 		}
-		s = FAT[s];					//取下一个盘块
+		s = FAT[s]; //取下一个盘块
 	}
 	Buffer[j] = '\0';
-	return len;						//返回文件长度
+	return len; //返回文件长度
 }
 
 /////////////////////////////////////////////////////////////////
 
-int buffer_to_file(FCB* fcbp, char* Buffer)	//Buffer写入文件
+int buffer_to_file(FCB* fcbp, char* Buffer) //Buffer写入文件
 {
 	//成功写入文件，返回1；写文件失败，返回0
 
 	short bn1, bn2, i, j, s, s0, len, size, count = 0;
 
-	len = strlen(Buffer);	//取字符串Buffer长度
-	s0 = s = fcbp->Addr;		//取文件首块号
+	len = strlen(Buffer); //取字符串Buffer长度
+	s0 = s = fcbp->Addr;  //取文件首块号
 	if (len == 0)
 	{
-		fcbp->Addr = fcbp->Fsize = 0;	//文件变为空文件
-		releaseblock(s);			//释放文件占用的磁盘空间
+		fcbp->Addr = fcbp->Fsize = 0; //文件变为空文件
+		releaseblock(s);			  //释放文件占用的磁盘空间
 		return 1;
 	}
-	size = fcbp->Fsize;	//取文件长度
-	bn1 = len / SIZE + (short)(len % SIZE > 0);		//Buffer若存盘占用的盘块数
-	bn2 = size / SIZE + (short)(size % SIZE > 0);	//文件原先内容占用的盘块数
+	size = fcbp->Fsize;							  //取文件长度
+	bn1 = len / SIZE + (short)(len % SIZE > 0);   //Buffer若存盘占用的盘块数
+	bn2 = size / SIZE + (short)(size % SIZE > 0); //文件原先内容占用的盘块数
 	if (FAT[0] < bn1 - bn2)
 	{
 		cout << "\n磁盘空间不足，不能将信息写入文件。\n";
 		return 0;
 	}
-	if (s == 0)				//若是空文件
+	if (s == 0) //若是空文件
 	{
-		s0 = s = getblock();	//为其分配首个盘块
-		fcbp->Addr = s0;		//记下首块号
+		s0 = s = getblock(); //为其分配首个盘块
+		fcbp->Addr = s0;	 //记下首块号
 	}
 	j = 0;
-	while (j < len)		//Buffer写入FilName2
+	while (j < len) //Buffer写入FilName2
 	{
 		if (s < 0)
 		{
@@ -2697,43 +2938,44 @@ int buffer_to_file(FCB* fcbp, char* Buffer)	//Buffer写入文件
 	}
 	if (s > 0)
 	{
-		FAT[s0] = -1;			//目标文件结束盘块标记
-		releaseblock(s);	//若FileName2仍有盘块未使用，应释放它们
+		FAT[s0] = -1;	//目标文件结束盘块标记
+		releaseblock(s); //若FileName2仍有盘块未使用，应释放它们
 	}
-	fcbp->Fsize = len - count;		//改变文件的长度
+	fcbp->Fsize = len - count; //改变文件的长度
 	return 1;
 }
 
 /////////////////////////////////////////////////////////////////
 
-void releaseblock(short s)	//回收磁盘空间
-{	//释放s开始的盘块链
+void releaseblock(short s) //回收磁盘空间
+{						   //释放s开始的盘块链
 	short s0;
-	while (s > 0)				//循环操作，直到盘块链尾部
+	while (s > 0) //循环操作，直到盘块链尾部
 	{
-		s0 = s;				//s0记下当前块号		
-		s = FAT[s];			//s指向下一个盘块
-		FAT[s0] = 0;			//释放盘块s0
-		FAT[0]++;			//空闲盘块数增1
+		s0 = s;		 //s0记下当前块号
+		s = FAT[s];  //s指向下一个盘块
+		FAT[s0] = 0; //释放盘块s0
+		FAT[0]++;	//空闲盘块数增1
 	}
 }
 
 /////////////////////////////////////////////////////////////////
 
-int ParseCommand(char* p)	//将输入的命令行分解成命令和参数等
+int ParseCommand(char* p) //将输入的命令行分解成命令和参数等
 {
 	int i, j, k, g = 0;
-	for (i = 0; i < CK; i++)					//初始化comd[][] 
+	for (i = 0; i < CK; i++) //初始化comd[][]
 		comd[i][0] = '\0';
 	for (k = 0; k < CK; k++)
-	{	//分解命令及其参数，comd[0]中是命令，comd[1],comd[2]...是参数
+	{ //分解命令及其参数，comd[0]中是命令，comd[1],comd[2]...是参数
 		for (i = 0; *p != '\0'; i++, p++)
-			if (*p != ' ')				//空格是命令、参数之间的分隔符
-				comd[k][i] = *p;		//取命令标识符
+			if (*p != ' ')		 //空格是命令、参数之间的分隔符
+				comd[k][i] = *p; //取命令标识符
 			else
 			{
 				comd[k][i] = '\0';
-				if (strlen(comd[k]) == 0) k--;
+				if (strlen(comd[k]) == 0)
+					k--;
 				p++;
 				break;
 			}
@@ -2744,16 +2986,16 @@ int ParseCommand(char* p)	//将输入的命令行分解成命令和参数等
 		}
 	}
 	for (i = 0; comd[0][i] != '\0'; i++)
-		if (comd[0][i] == '/')		//处理cd/，dir/usr等情况
+		if (comd[0][i] == '/') //处理cd/，dir/usr等情况
 			break;
-	if (comd[0][i] != '\0')			//comd[0]中存在字符'/'
+	if (comd[0][i] != '\0') //comd[0]中存在字符'/'
 	{
 		if (k > 0)
 			for (j = k; j > 0; j--)
-				strcpy(comd[j + 1], comd[j]);	//后移
+				strcpy(comd[j + 1], comd[j]); //后移
 		strcpy(comd[1], &comd[0][i]);
 		comd[0][i] = '\0';
-		k++;	//多出一个参数
+		k++; //多出一个参数
 	}
 	return k;
 }
